@@ -84,7 +84,7 @@ Skills can be installed to any of these supported agents. Use `-g, --global` to 
 | Agent | `--agent` | Project Path | Global Path |
 |-------|-----------|--------------|-------------|
 | Amp | `amp` | `.agents/skills/` | `~/.config/agents/skills/` |
-| Antigravity | `antigravity` | `.agent/skills/` | `~/.gemini/antigravity/skills/` |
+| Antigravity | `antigravity` | `.agent/skills/` | `~/.gemini/antigravity/global_skills/` |
 | Claude Code | `claude-code` | `.claude/skills/` | `~/.claude/skills/` |
 | Clawdbot | `clawdbot` | `skills/` | `~/.clawdbot/skills/` |
 | Cline | `cline` | `.cline/skills/` | `~/.cline/skills/` |
