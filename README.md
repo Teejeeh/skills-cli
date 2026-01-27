@@ -6,6 +6,7 @@ The CLI for the open agent skills ecosystem.
 Supports **Opencode**, **Claude Code**, **Codex**, **Cursor**, and [25 more](#available-agents).
 <!-- agent-list:end -->
 
+<!-- agent-list:end -->
 
 <!-- agent-list:end -->
 
@@ -225,6 +226,19 @@ Describe the scenarios where this skill should be used.
 - `name`: Unique identifier (lowercase, hyphens allowed)
 - `description`: Brief explanation of what the skill does
 
+### Optional Fields
+
+- `metadata.internal`: Set to `true` to hide the skill from normal discovery. Internal skills are only visible and installable when `INSTALL_INTERNAL_SKILLS=1` is set. Useful for work-in-progress skills or skills meant only for internal tooling.
+
+```markdown
+---
+name: my-internal-skill
+description: An internal skill not shown by default
+metadata:
+  internal: true
+---
+```
+
 ### Skill Discovery
 
 The CLI searches for skills in these locations within a repository:
@@ -295,17 +309,22 @@ Ensure the repository contains valid `SKILL.md` files with both `name` and `desc
 
 Ensure you have write access to the target directory.
 
+## Environment Variables
+
+| Variable                  | Description                                                                |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `INSTALL_INTERNAL_SKILLS` | Set to `1` or `true` to show and install skills marked as `internal: true` |
+| `DISABLE_TELEMETRY`       | Set to disable anonymous usage telemetry                                   |
+| `DO_NOT_TRACK`            | Alternative way to disable telemetry                                       |
+
+```bash
+# Install internal skills
+INSTALL_INTERNAL_SKILLS=1 npx skills add vercel-labs/agent-skills --list
+```
+
 ## Telemetry
 
 This CLI collects anonymous usage data to help improve the tool. No personal information is collected.
-
-To disable telemetry:
-
-```bash
-DISABLE_TELEMETRY=1 npx skills add vercel-labs/agent-skills
-# or
-DO_NOT_TRACK=1 npx skills add vercel-labs/agent-skills
-```
 
 Telemetry is automatically disabled in CI environments.
 
