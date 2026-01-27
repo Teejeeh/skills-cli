@@ -236,10 +236,12 @@ export async function installSkillForAgent(
 }
 
 const EXCLUDE_FILES = new Set(['README.md', 'metadata.json']);
+const EXCLUDE_DIRS = new Set(['.git']);
 
-const isExcluded = (name: string): boolean => {
+const isExcluded = (name: string, isDirectory: boolean = false): boolean => {
   if (EXCLUDE_FILES.has(name)) return true;
   if (name.startsWith('_')) return true;
+  if (isDirectory && EXCLUDE_DIRS.has(name)) return true;
   return false;
 };
 
@@ -249,14 +251,15 @@ async function copyDirectory(src: string, dest: string): Promise<void> {
   const entries = await readdir(src, { withFileTypes: true });
 
   for (const entry of entries) {
-    if (isExcluded(entry.name)) {
+    const isDir = entry.isDirectory();
+    if (isExcluded(entry.name, isDir)) {
       continue;
     }
 
     const srcPath = join(src, entry.name);
     const destPath = join(dest, entry.name);
 
-    if (entry.isDirectory()) {
+    if (isDir) {
       await copyDirectory(srcPath, destPath);
     } else {
       await cp(srcPath, destPath);
