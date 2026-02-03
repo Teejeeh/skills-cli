@@ -34,14 +34,14 @@ export async function searchSkillsAPI(query: string): Promise<SearchSkill[]> {
         id: string;
         name: string;
         installs: number;
-        topSource: string | null;
+        source: string;
       }>;
     };
 
     return data.skills.map((skill) => ({
       name: skill.name,
       slug: skill.id,
-      source: skill.topSource || '',
+      source: skill.source || '',
       installs: skill.installs,
     }));
   } catch {
