@@ -665,7 +665,9 @@ async function handleRemoteSkill(
   }
 
   console.log();
-  p.outro(pc.green('Done!'));
+  p.outro(
+    pc.green('Done!') + pc.dim('  Review skills before use; they run with full agent permissions.')
+  );
 
   // Prompt for find-skills after successful install
   await promptForFindSkills(options, targetAgents);
@@ -1095,7 +1097,9 @@ async function handleWellKnownSkills(
   }
 
   console.log();
-  p.outro(pc.green('Done!'));
+  p.outro(
+    pc.green('Done!') + pc.dim('  Review skills before use; they run with full agent permissions.')
+  );
 
   // Prompt for find-skills after successful install
   await promptForFindSkills(options, targetAgents);
@@ -1395,7 +1399,9 @@ async function handleDirectUrlSkillLegacy(
   }
 
   console.log();
-  p.outro(pc.green('Done!'));
+  p.outro(
+    pc.green('Done!') + pc.dim('  Review skills before use; they run with full agent permissions.')
+  );
 
   // Prompt for find-skills after successful install
   await promptForFindSkills(options, targetAgents);
@@ -1942,7 +1948,10 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     }
 
     console.log();
-    p.outro(pc.green('Done!'));
+    p.outro(
+      pc.green('Done!') +
+        pc.dim('  Review skills before use; they run with full agent permissions.')
+    );
 
     // Prompt for find-skills after successful install
     await promptForFindSkills(options, targetAgents);
