@@ -210,7 +210,7 @@ Skills can be installed to any of these agents:
 |-------|-----------|--------------|-------------|
 | Amp, Kimi Code CLI, Replit | `amp`, `kimi-cli`, `replit` | `.agents/skills/` | `~/.config/agents/skills/` |
 | Antigravity | `antigravity` | `.agent/skills/` | `~/.gemini/antigravity/skills/` |
-| Augment | `augment` | `.augment/rules/` | `~/.augment/rules/` |
+| Augment | `augment` | `.augment/skills/` | `~/.augment/skills/` |
 | Claude Code | `claude-code` | `.claude/skills/` | `~/.claude/skills/` |
 | OpenClaw | `openclaw` | `skills/` | `~/.moltbot/skills/` |
 | Cline | `cline` | `.cline/skills/` | `~/.cline/skills/` |
@@ -316,7 +316,7 @@ The CLI searches for skills in these locations within a repository:
 - `skills/.system/`
 - `.agents/skills/`
 - `.agent/skills/`
-- `.augment/rules/`
+- `.augment/skills/`
 - `.claude/skills/`
 - `./skills/`
 - `.cline/skills/`
