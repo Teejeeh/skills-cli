@@ -57,7 +57,7 @@ describe('source-parser', () => {
       });
     });
 
-    it('prevents false positives for generic URLs (falls through to well-known)', () => {
+    it('prevents false positives for generic URLs (falls through to well-known handling)', () => {
       const result = parseSource('https://google.com/search/result');
       expect(result.type).toBe('well-known');
       expect(result.url).toBe('https://google.com/search/result');

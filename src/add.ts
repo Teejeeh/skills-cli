@@ -76,6 +76,7 @@ import {
 } from './telemetry.ts';
 import { detectAgent, getAgentType } from './detect-agent.ts';
 import { wellKnownProvider, type WellKnownSkill } from './providers/index.ts';
+import { downloadSource } from './download-source.ts';
 import {
   addSkillToLock,
   fetchSkillFolderHash,
@@ -569,20 +570,15 @@ async function handleWellKnownSkills(
   url: string,
   options: AddOptions,
   spinner: ReturnType<typeof p.spinner>
-): Promise<void> {
+): Promise<boolean> {
   spinner.start('Discovering skills from well-known endpoint...');
 
   // Fetch all skills from the well-known endpoint
-  const skills = await wellKnownProvider.fetchAllSkills(url);
+  const skills = await wellKnownProvider.fetchAllSkills(url).catch(() => []);
 
   if (skills.length === 0) {
-    spinner.stop(pc.red('No skills found'));
-    p.outro(
-      pc.red(
-        'No skills found at this URL. Make sure the server has a /.well-known/agent-skills/index.json or /.well-known/skills/index.json file.'
-      )
-    );
-    process.exit(1);
+    spinner.stop(pc.dim('No well-known skills found; trying direct download...'));
+    return false;
   }
 
   spinner.stop(`Found ${pc.green(skills.length)} skill${skills.length > 1 ? 's' : ''}`);
@@ -1022,6 +1018,7 @@ async function handleWellKnownSkills(
 
   // Prompt for find-skills after successful install
   await promptForFindSkills(options, targetAgents);
+  return true;
 }
 
 export async function runAdd(args: string[], options: AddOptions = {}): Promise<void> {
@@ -1108,10 +1105,11 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       return isRepoPrivate(ownerRepo.owner, ownerRepo.repo).catch(() => null);
     })();
 
-    // Handle well-known skills from arbitrary URLs
+    // Handle arbitrary URLs by trying well-known discovery first, then
+    // falling back to a direct SKILL.md/archive download.
     if (parsed.type === 'well-known') {
-      await handleWellKnownSkills(source, parsed.url, options, spinner);
-      return;
+      const handled = await handleWellKnownSkills(source, parsed.url, options, spinner);
+      if (handled) return;
     }
 
     // If skillFilter is present from @skill syntax (e.g., owner/repo@skill-name),
@@ -1142,6 +1140,17 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
       spinner.start('Discovering skills...');
       skills = await discoverSkills(parsed.localPath!, parsed.subpath, {
+        includeInternal,
+        fullDepth: options.fullDepth,
+      });
+    } else if (parsed.type === 'well-known') {
+      spinner.start('Downloading source...');
+      const downloaded = await downloadSource(parsed.url);
+      tempDir = downloaded.tempDir;
+      spinner.stop(`Downloaded ${downloaded.kind === 'skill-md' ? 'SKILL.md file' : 'archive'}`);
+
+      spinner.start('Discovering skills...');
+      skills = await discoverSkills(downloaded.rootDir, parsed.subpath, {
         includeInternal,
         fullDepth: options.fullDepth,
       });

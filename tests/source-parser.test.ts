@@ -145,6 +145,14 @@ describe('parseSource', () => {
     });
   });
 
+  describe('Generic URL tests', () => {
+    it('generic HTTP URL is parsed as well-known with direct download fallback', () => {
+      const result = parseSource('https://internal.example.com/download?id=123');
+      expect(result.type).toBe('well-known');
+      expect(result.url).toBe('https://internal.example.com/download?id=123');
+    });
+  });
+
   describe('GitHub shorthand tests', () => {
     it('GitHub shorthand - owner/repo', () => {
       const result = parseSource('owner/repo');
