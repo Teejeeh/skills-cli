@@ -11,26 +11,11 @@ import {
   formatEveInstallPromptMessage,
 } from './add.ts';
 
-const noDetectedAgentEnv = {
-  AI_AGENT: '',
-  ANTIGRAVITY_AGENT: '',
-  AUGMENT_AGENT: '',
-  CLAUDE_CODE: '',
-  CLAUDE_CODE_IS_COWORK: '',
-  CLAUDECODE: '',
-  CODEX_CI: '',
-  CODEX_SANDBOX: '',
-  CODEX_THREAD_ID: '',
-  COPILOT_ALLOW_ALL: '',
-  COPILOT_GITHUB_TOKEN: '',
-  COPILOT_MODEL: '',
-  CURSOR_AGENT: '',
-  CURSOR_EXTENSION_HOST_ROLE: '',
-  CURSOR_TRACE_ID: '',
-  GEMINI_CLI: '',
-  OPENCODE_CLIENT: '',
-  REPL_ID: '',
-};
+function countPathLinesForSkill(text: string, skillName: string): number {
+  return (
+    text.match(new RegExp(`→ .*${skillName.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}`, 'g')) || []
+  ).length;
+}
 
 describe('add command', () => {
   let testDir: string;
@@ -116,6 +101,63 @@ Instructions here.
     expect(result.exitCode).toBe(0);
   });
 
+  it('deduplicates copied install paths for universal agents sharing the same directory', () => {
+    const sourceDir = join(testDir, 'source');
+    const skillDir = join(sourceDir, 'skills', 'shared-skill');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      `---
+name: shared-skill
+description: Shared install path regression test
+---
+
+# Shared Skill
+`
+    );
+
+    const projectDir = join(testDir, 'project');
+    mkdirSync(projectDir, { recursive: true });
+
+    const result = runCli(
+      ['add', sourceDir, '-y', '--agent', 'codex', 'cursor', 'cline'],
+      projectDir
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Installed 1 skill');
+    expect(result.stdout).toContain('✓ shared-skill (copied)');
+    expect(countPathLinesForSkill(result.stdout, 'shared-skill')).toBe(1);
+  });
+
+  it('preserves distinct copied install paths when --copy targets different agent directories', () => {
+    const sourceDir = join(testDir, 'source');
+    const skillDir = join(sourceDir, 'skills', 'multi-target-skill');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      `---
+name: multi-target-skill
+description: Mixed copied destination regression test
+---
+
+# Multi Target Skill
+`
+    );
+
+    const projectDir = join(testDir, 'project');
+    mkdirSync(projectDir, { recursive: true });
+
+    const result = runCli(
+      ['add', sourceDir, '-y', '--copy', '--agent', 'codex', 'cursor', 'openclaw'],
+      projectDir
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('✓ multi-target-skill (copied)');
+    expect(countPathLinesForSkill(result.stdout, 'multi-target-skill')).toBe(2);
+  });
+
   it('should describe Eve project installs as for the eve agent to use', () => {
     const sourceDir = join(testDir, 'source');
     const skillDir = join(sourceDir, 'eve-skill');
@@ -140,11 +182,7 @@ Instructions here.
       JSON.stringify({ dependencies: { eve: '^0.11.5' } })
     );
 
-    const result = runCli(
-      ['add', sourceDir, '-y', '--skill', 'eve-skill'],
-      projectDir,
-      noDetectedAgentEnv
-    );
+    const result = runCli(['add', sourceDir, '-y', '--skill', 'eve-skill'], projectDir);
 
     expect(result.stdout).toContain('Installing to: eve agent');
     expect(result.stdout).not.toContain('Installing to: Eve');
