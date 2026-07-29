@@ -1,4 +1,4 @@
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, type Stats } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, normalize, resolve, sep } from 'node:path';
@@ -20,7 +20,7 @@ interface DownloadLimits {
 
 interface ExtractState {
   bytes: number;
-  files: number;
+  entries: number;
 }
 
 class ArchiveValidationError extends Error {
@@ -68,11 +68,11 @@ function validateArchivePath(path: string): string | null {
   return normalized;
 }
 
-function incrementFile(state: ExtractState, size: number, limits: DownloadLimits): void {
-  state.files += 1;
-  if (state.files > limits.extractMaxFiles) {
+function incrementEntry(state: ExtractState, size: number, limits: DownloadLimits): void {
+  state.entries += 1;
+  if (state.entries > limits.extractMaxFiles) {
     throw new ArchiveValidationError(
-      `Archive contains too many files (${state.files}). Maximum is ${limits.extractMaxFiles}. Set SKILLS_EXTRACT_MAX_FILES to override.`
+      `Archive contains too many files (${state.entries}). Maximum is ${limits.extractMaxFiles}. Set SKILLS_EXTRACT_MAX_FILES to override.`
     );
   }
 
@@ -176,7 +176,7 @@ async function extractZip(
   limits: DownloadLimits
 ): Promise<void> {
   const zipFile = await openZip(filePath);
-  const state: ExtractState = { bytes: 0, files: 0 };
+  const state: ExtractState = { bytes: 0, entries: 0 };
 
   try {
     await new Promise<void>((resolvePromise, reject) => {
@@ -195,6 +195,8 @@ async function extractZip(
             throw new ArchiveValidationError(`Archive contains unsafe path: ${entry.fileName}`);
           }
 
+          incrementEntry(state, entry.uncompressedSize, limits);
+
           if (!safePath || /\/$/.test(safePath)) {
             zipFile.readEntry();
             return;
@@ -205,7 +207,6 @@ async function extractZip(
             return;
           }
 
-          incrementFile(state, entry.uncompressedSize, limits);
           const targetPath = join(extractDir, safePath);
           if (!isPathSafe(extractDir, targetPath)) {
             throw new ArchiveValidationError(`Archive contains unsafe path: ${entry.fileName}`);
@@ -224,8 +225,18 @@ async function extractZip(
   }
 }
 
-function isTarEntryFile(entry: tar.ReadEntry | tar.FileStat): boolean {
-  return entry.type === 'File' || entry.type === 'OldFile' || entry.type === 'ContiguousFile';
+function getTarEntryType(entry: tar.ReadEntry | Stats): string {
+  if (entry instanceof tar.ReadEntry) {
+    return entry.type;
+  }
+  if (entry.isFile()) return 'File';
+  if (entry.isDirectory()) return 'Directory';
+  return '';
+}
+
+function isTarEntryFile(entry: tar.ReadEntry | Stats): boolean {
+  const type = getTarEntryType(entry);
+  return type === 'File' || type === 'OldFile' || type === 'ContiguousFile';
 }
 
 async function extractTar(
@@ -233,33 +244,49 @@ async function extractTar(
   extractDir: string,
   limits: DownloadLimits
 ): Promise<void> {
-  const state: ExtractState = { bytes: 0, files: 0 };
+  const state: ExtractState = { bytes: 0, entries: 0 };
+  let validationError: ArchiveValidationError | undefined;
 
   await tar.x({
     strict: true,
     filter(entryPath, entry) {
-      const safePath = validateArchivePath(entryPath);
-      if (safePath === null) {
-        throw new ArchiveValidationError(`Archive contains unsafe path: ${entryPath}`);
-      }
+      if (validationError) return false;
 
-      const targetPath = join(extractDir, safePath);
-      if (!isPathSafe(extractDir, targetPath)) {
-        throw new ArchiveValidationError(`Archive contains unsafe path: ${entryPath}`);
-      }
+      try {
+        const safePath = validateArchivePath(entryPath);
+        if (safePath === null) {
+          throw new ArchiveValidationError(`Archive contains unsafe path: ${entryPath}`);
+        }
 
-      if (isTarEntryFile(entry)) {
-        incrementFile(state, entry.size, limits);
-        return true;
-      }
+        const targetPath = join(extractDir, safePath);
+        if (!isPathSafe(extractDir, targetPath)) {
+          throw new ArchiveValidationError(`Archive contains unsafe path: ${entryPath}`);
+        }
 
-      return entry.type === 'Directory';
+        incrementEntry(state, entry.size, limits);
+
+        if (isTarEntryFile(entry)) {
+          return true;
+        }
+
+        return getTarEntryType(entry) === 'Directory';
+      } catch (error) {
+        if (error instanceof ArchiveValidationError) {
+          validationError = error;
+          return false;
+        }
+        throw error;
+      }
     },
     cwd: extractDir,
     preservePaths: false,
     noChmod: true,
     file: filePath,
   });
+
+  if (validationError) {
+    throw validationError;
+  }
 }
 
 async function tryExtractArchive(

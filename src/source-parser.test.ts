@@ -63,6 +63,11 @@ describe('source-parser', () => {
       expect(result.url).toBe('https://google.com/search/result');
     });
 
+    it('treats raw GitHub files as direct downloads', () => {
+      const url = 'https://raw.githubusercontent.com/owner/repo/main/SKILL.md';
+      expect(parseSource(url)).toEqual({ type: 'download', url });
+    });
+
     it('retains official gitlab.com parsing for convenience', () => {
       const result = parseSource('https://gitlab.com/owner/repo');
       expect(result).toEqual({

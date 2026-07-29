@@ -8,7 +8,7 @@ import type { ParsedSource } from './types.ts';
  * Supports any Git host with an owner/repo URL structure, including GitLab subgroups.
  */
 export function getOwnerRepo(parsed: ParsedSource): string | null {
-  if (parsed.type === 'local') {
+  if (parsed.type === 'local' || parsed.type === 'download') {
     return null;
   }
 
@@ -137,7 +137,8 @@ function isLocalPath(input: string): boolean {
 
 /**
  * Parse a source string into a structured format
- * Supports: local paths, GitHub URLs, GitLab URLs, GitHub shorthand, well-known URLs, and direct git URLs
+ * Supports: local paths, GitHub URLs, GitLab URLs, GitHub shorthand, well-known URLs,
+ * hosted download URLs, and direct git URLs
  */
 // Source aliases: map common shorthand to canonical source
 const SOURCE_ALIASES: Record<string, string> = {
@@ -238,6 +239,35 @@ function appendFragmentRef(input: string, ref?: string, skillFilter?: string): s
   return `${input}#${ref}${skillFilter ? `@${skillFilter}` : ''}`;
 }
 
+function isHostedArtifactUrl(input: string): boolean {
+  try {
+    const parsed = new URL(input);
+    const host = parsed.hostname.toLowerCase();
+
+    if (
+      host === 'raw.githubusercontent.com' ||
+      host === 'codeload.github.com' ||
+      host === 'objects.githubusercontent.com'
+    ) {
+      return true;
+    }
+
+    if (host === 'github.com') {
+      return /^\/[^/]+\/[^/]+\/(?:archive\/|raw\/|releases\/(?:download\/|latest\/download\/))/.test(
+        parsed.pathname
+      );
+    }
+
+    if (host === 'gitlab.com') {
+      return /\/-\/(?:archive|raw)\//.test(parsed.pathname);
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function parseSource(input: string): ParsedSource {
   // Local path: absolute, relative, or current directory
   if (isLocalPath(input)) {
@@ -280,6 +310,15 @@ export function parseSource(input: string): ParsedSource {
         fragmentSkillFilter
       )
     );
+  }
+
+  // Hosted raw files and archive/release assets must be downloaded directly,
+  // not normalized to their parent repository and cloned.
+  if (isHostedArtifactUrl(input)) {
+    return {
+      type: 'download',
+      url: input,
+    };
   }
 
   // GitHub URL with path: https://github.com/owner/repo/tree/branch/path/to/skill

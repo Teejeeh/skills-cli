@@ -102,6 +102,7 @@ describe('downloadSource', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
@@ -232,5 +233,31 @@ description: Unsafe archive path
     await expect(downloadSource('https://internal.example.com/download')).rejects.toThrow(
       'Archive contains too many files'
     );
+  });
+
+  it('counts tar directory entries toward the archive entry limit', async () => {
+    const archiveRoot = join(testDir, 'directory-limit');
+    const skillDir = join(archiveRoot, 'repo-main', 'skills', 'limited');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: limited\ndescription: Limited\n---\n');
+
+    const archivePath = join(testDir, 'directory-limit.tgz');
+    await tar.c({ cwd: archiveRoot, gzip: true, file: archivePath }, ['repo-main']);
+    mockFetchFile(archivePath);
+    vi.stubEnv('SKILLS_EXTRACT_MAX_FILES', '1');
+
+    let downloadedTempDir: string | undefined;
+    try {
+      const downloaded = await downloadSource('https://internal.example.com/download');
+      downloadedTempDir = downloaded.tempDir;
+      expect.fail('expected archive entry limit error');
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('Archive contains too many files');
+    } finally {
+      if (downloadedTempDir) {
+        rmSync(downloadedTempDir, { recursive: true, force: true });
+      }
+    }
   });
 });

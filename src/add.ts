@@ -1085,6 +1085,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
 
     spinner.start('Parsing source…');
     const parsed = parseSource(source);
+    let directDownload = parsed.type === 'download';
     spinner.stop(
       `Source: ${parsed.type === 'local' ? parsed.localPath! : parsed.url}${parsed.ref ? ` @ ${pc.yellow(parsed.ref)}` : ''}${parsed.subpath ? ` (${parsed.subpath})` : ''}${parsed.skillFilter ? ` ${pc.dim('@')}${pc.cyan(parsed.skillFilter)}` : ''}`
     );
@@ -1092,7 +1093,8 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     // Kick off the repo privacy check early so it runs in parallel with
     // cloning/discovering/installing. The result is only needed later for
     // telemetry gating — it should never block user-visible output.
-    const ownerRepoRaw = getOwnerRepo(parsed);
+    const ownerRepoRaw =
+      parsed.type === 'well-known' || parsed.type === 'download' ? null : getOwnerRepo(parsed);
     const repoPrivacyPromise: Promise<boolean | null> = (() => {
       if (!ownerRepoRaw) return Promise.resolve(null);
       const ownerRepo = parseOwnerRepo(ownerRepoRaw);
@@ -1105,6 +1107,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     if (parsed.type === 'well-known') {
       const handled = await handleWellKnownSkills(source, parsed.url, options, spinner);
       if (handled) return;
+      directDownload = true;
     }
 
     // If skillFilter is present from @skill syntax (e.g., owner/repo@skill-name),
@@ -1138,7 +1141,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         includeInternal,
         fullDepth: options.fullDepth,
       });
-    } else if (parsed.type === 'well-known') {
+    } else if (parsed.type === 'well-known' || parsed.type === 'download') {
       spinner.start('Downloading source...');
       const downloaded = await downloadSource(parsed.url);
       tempDir = downloaded.tempDir;
@@ -1774,10 +1777,12 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     }
 
     // Normalize source to owner/repo format for telemetry
-    const normalizedSource = getOwnerRepo(parsed);
+    const normalizedSource = directDownload ? null : getOwnerRepo(parsed);
 
-    const lockSource = getLockSource(parsed.url, normalizedSource);
-    const projectLockSourceUrl = getProjectLockSourceUrl(parsed.type, parsed.url);
+    const lockSource = directDownload ? null : getLockSource(parsed.url, normalizedSource);
+    const projectLockSourceUrl = directDownload
+      ? undefined
+      : getProjectLockSourceUrl(parsed.type, parsed.url);
 
     // Only track if we have a valid remote source and it's not a private repo.
     // repoPrivacyPromise was started early (right after parsing) so it has
@@ -1860,7 +1865,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     }
 
     // Add to local lock file for project-scoped installs
-    if (successful.length > 0 && !installGlobally) {
+    if (successful.length > 0 && !installGlobally && !directDownload) {
       const successfulSkillNames = new Set(successful.map((r) => r.skill));
       // Record Eve subagent placement (root = '') so `update` can restore it.
       // Only meaningful when Eve is among the targets and a non-root subagent
