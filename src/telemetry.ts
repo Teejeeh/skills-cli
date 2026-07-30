@@ -1,5 +1,5 @@
-const TELEMETRY_URL = 'https://add-skill.vercel.sh/t';
-const AUDIT_URL = 'https://add-skill.vercel.sh/audit';
+const TELEMETRY_URL = process.env.SKILLS_TELEMETRY_URL ?? 'https://add-skill.vercel.sh/t';
+const AUDIT_URL = process.env.SKILLS_AUDIT_URL ?? 'https://add-skill.vercel.sh/audit';
 
 interface InstallTelemetryData {
   event: 'install';
@@ -19,6 +19,12 @@ interface InstallTelemetryData {
    * - Provider IDs like 'mintlify', 'huggingface', etc.
    */
   sourceType?: string;
+  /**
+   * Origin URL of the repository host for non-standard hosts (self-hosted GitLab, etc.).
+   * e.g. "https://gitlab.company.com". Omitted for github.com and gitlab.com.
+   * Allows a self-hosted telemetry server to fetch SKILL.md without GITLAB_HOST config.
+   */
+  repoUrl?: string;
 }
 
 interface RemoveTelemetryData {
