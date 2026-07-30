@@ -1,4 +1,9 @@
 import { isAbsolute, resolve } from 'path';
+import {
+  expandGlShorthand,
+  matchSelfHostedGitLabUrl,
+  redirectOwnerRepoToGitLab,
+} from './gitlab.ts';
 import type { ParsedSource } from './types.ts';
 import { getGitHubHost, isGitHubHost } from './github-host.ts';
 
@@ -162,7 +167,12 @@ function decodeFragmentValue(value: string): string {
 }
 
 function looksLikeGitSource(input: string): boolean {
-  if (input.startsWith('github:') || input.startsWith('gitlab:') || input.startsWith('git@')) {
+  if (
+    input.startsWith('github:') ||
+    input.startsWith('gitlab:') ||
+    input.startsWith('gl:') ||
+    input.startsWith('git@')
+  ) {
     return true;
   }
 
@@ -301,6 +311,12 @@ export function parseSource(input: string): ParsedSource {
     return parseSource(appendFragmentRef(githubPrefixMatch[1]!, fragmentRef, fragmentSkillFilter));
   }
 
+  // Prefix shorthand: gl:owner/repo -> https://<GITLAB_HOST>/owner/repo
+  const glExpanded = expandGlShorthand(input);
+  if (glExpanded !== null) {
+    return parseSource(appendFragmentRef(glExpanded, fragmentRef, fragmentSkillFilter));
+  }
+
   // Prefix shorthand: gitlab:owner/repo -> https://gitlab.com/owner/repo
   const gitlabPrefixMatch = input.match(/^gitlab:(.+)$/);
   if (gitlabPrefixMatch) {
@@ -430,11 +446,21 @@ export function parseSource(input: string): ParsedSource {
     }
   }
 
-  // GitHub shorthand: owner/repo, owner/repo/path/to/skill, or owner/repo@skill-name
-  // Exclude paths that start with . or / to avoid matching local paths
-  // GH_HOST selects a GitHub Enterprise host for shorthand inputs. Enterprise
-  // sources use the generic git path because GitHub.com API optimizations do
-  // not apply to them.
+  // When GitLab sources are configured, redirect bare owner/repo shorthands and
+  // protocol-less hostname inputs to the matching GitLab instance first.
+  const glRedirect = redirectOwnerRepoToGitLab(input);
+  if (glRedirect) {
+    return parseSource(
+      appendFragmentRef(
+        glRedirect.redirectUrl,
+        fragmentRef,
+        fragmentSkillFilter || glRedirect.skillFilter
+      )
+    );
+  }
+
+  // GH_HOST selects a GitHub Enterprise host for shorthand inputs; enterprise
+  // sources use the generic git type since GitHub.com API optimizations don't apply.
   const githubHost = getGitHubHost();
   const shorthandSourceType = githubHost === 'github.com' ? 'github' : 'git';
 
@@ -461,6 +487,10 @@ export function parseSource(input: string): ParsedSource {
       ...(fragmentSkillFilter ? { skillFilter: fragmentSkillFilter } : {}),
     };
   }
+
+  // Self-hosted GitLab URL: must be checked before isWellKnownUrl to avoid misidentification.
+  const selfHostedGitLab = matchSelfHostedGitLabUrl(input, fragmentRef);
+  if (selfHostedGitLab) return selfHostedGitLab;
 
   // Well-known skills: arbitrary HTTP(S) URLs that aren't GitHub/GitLab.
   // These are also valid direct download URLs: callers should try well-known

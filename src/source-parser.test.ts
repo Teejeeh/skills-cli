@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseSource } from './source-parser.js';
 
 describe('source-parser', () => {
@@ -177,6 +177,28 @@ describe('source-parser', () => {
         type: 'github',
         url: 'https://github.com/owner/repo.git',
       });
+    });
+  });
+
+  describe('Self-hosted GitLab shorthand (GITLAB_HOST set)', () => {
+    beforeEach(() => {
+      process.env.GITLAB_HOST = 'https://gitlab.kwal-it.nl';
+    });
+
+    afterEach(() => {
+      delete process.env.GITLAB_HOST;
+    });
+
+    it('does not double-prepend host when input starts with the GitLab hostname', () => {
+      const result = parseSource('gitlab.kwal-it.nl/thomas.huisman/skills');
+      expect(result.type).toBe('gitlab');
+      expect(result.url).toBe('https://gitlab.kwal-it.nl/thomas.huisman/skills.git');
+    });
+
+    it('does not double-prepend host for three-segment path (hostname/owner/repo)', () => {
+      const result = parseSource('gitlab.kwal-it.nl/owner/repo');
+      expect(result.type).toBe('gitlab');
+      expect(result.url).toBe('https://gitlab.kwal-it.nl/owner/repo.git');
     });
   });
 });
