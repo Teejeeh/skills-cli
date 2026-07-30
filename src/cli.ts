@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
-import { basename, join, dirname } from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { runAdd, parseAddOptions, initTelemetry } from './add.ts';
+import { initTelemetry, parseAddOptions, runAdd } from './add.ts';
+import { runConfig } from './config.ts';
+import { isRunningInAgent } from './detect-agent.ts';
 import { runFind } from './find.ts';
 import { runInstallFromLock } from './install.ts';
 import { runList } from './list.ts';
-import { removeCommand, parseRemoveOptions } from './remove.ts';
-import { runSync, parseSyncOptions } from './sync.ts';
+import { parseRemoveOptions, removeCommand } from './remove.ts';
+import { runSourceCommand } from './source.ts';
+import { parseSyncOptions, runSync } from './sync.ts';
 import { flushTelemetry } from './telemetry.ts';
-import { isRunningInAgent } from './detect-agent.ts';
 import { runUpdate } from './update.ts';
-import { runUse, parseUseOptions } from './use.ts';
+import { parseUseOptions, runUse } from './use.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -85,6 +87,12 @@ function showBanner(): void {
   console.log(
     `  ${DIM}$${RESET} ${TEXT}npx skills update${RESET}               ${DIM}Update installed skills${RESET}`
   );
+  console.log(
+    `  ${DIM}$${RESET} ${TEXT}npx skills config agents${RESET}        ${DIM}Set default agents for installs${RESET}`
+  );
+  console.log(
+    `  ${DIM}$${RESET} ${TEXT}npx skills source add ${DIM}<host>${RESET}      ${DIM}Add a custom GitLab source${RESET}`
+  );
   console.log();
   console.log(
     `  ${DIM}$${RESET} ${TEXT}npx skills experimental_install${RESET} ${DIM}Restore from skills-lock.json${RESET}`
@@ -98,7 +106,7 @@ function showBanner(): void {
   console.log();
   console.log(`${DIM}try:${RESET} npx skills add vercel-labs/agent-skills`);
   console.log();
-  console.log(`Discover more skills at ${TEXT}https://skills.sh/${RESET}`);
+  console.log(`Discover more skills at ${TEXT}https://skills.kwal-it.nl/${RESET}`);
   console.log();
 }
 
@@ -121,6 +129,13 @@ ${BOLD}Find Options:${RESET}
 
 ${BOLD}Updates:${RESET}
   update [skills...]   Update skills to latest versions (alias: upgrade)
+
+${BOLD}Configuration:${RESET}
+  config agents        Set default agents for future installs
+  config agents -l     Show current default agents
+  source add <host>    Add a custom skill source (e.g. gitlab.company.com)
+  source list          List configured sources
+  source remove <host> Remove a configured source
 
 ${BOLD}Update Options:${RESET}
   -g, --global           Update global skills only
@@ -194,7 +209,7 @@ ${BOLD}Examples:${RESET}
   ${DIM}$${RESET} skills experimental_sync              ${DIM}# sync from node_modules${RESET}
   ${DIM}$${RESET} skills experimental_sync -y           ${DIM}# sync without prompts${RESET}
 
-Discover more skills at ${TEXT}https://skills.sh/${RESET}
+Discover more skills at ${TEXT}https://skills.kwal-it.nl/${RESET}
 `);
 }
 
@@ -225,7 +240,7 @@ ${BOLD}Examples:${RESET}
   ${DIM}$${RESET} skills remove --all                      ${DIM}# remove all skills${RESET}
   ${DIM}$${RESET} skills remove --skill '*' -a cursor      ${DIM}# remove all skills from cursor${RESET}
 
-Discover more skills at ${TEXT}https://skills.sh/${RESET}
+Discover more skills at ${TEXT}https://skills.kwal-it.nl/${RESET}
 `);
 }
 
@@ -288,7 +303,9 @@ Describe when this skill should be used.
     `  ${DIM}URL:${RESET}     Host the file, then ${TEXT}npx skills add https://example.com/${displayPath}${RESET}`
   );
   console.log();
-  console.log(`Browse existing skills for inspiration at ${TEXT}https://skills.sh/${RESET}`);
+  console.log(
+    `Browse existing skills for inspiration at ${TEXT}https://skills.kwal-it.nl/${RESET}`
+  );
   console.log();
 }
 
@@ -400,6 +417,12 @@ async function main(): Promise<void> {
     case '--version':
     case '-v':
       console.log(VERSION);
+      break;
+    case 'config':
+      await runConfig(restArgs);
+      break;
+    case 'source':
+      await runSourceCommand(restArgs);
       break;
 
     default:
