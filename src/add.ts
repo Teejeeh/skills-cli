@@ -1,6 +1,5 @@
 import * as p from '@clack/prompts';
 import { existsSync } from 'fs';
-import { createHash } from 'node:crypto';
 import { homedir } from 'os';
 import { dirname, join, sep } from 'path';
 import pc from 'picocolors';
@@ -23,6 +22,7 @@ import {
   type BlobSkill,
 } from './blob.ts';
 import { detectAgent, getAgentType } from './detect-agent.ts';
+import { downloadSource } from './download-source.ts';
 import { cleanupTempDir, cloneRepo, GitCloneError } from './git.ts';
 import { promptGitLabSourceForInput, tryGitLabInstall } from './gitlab.ts';
 import {
@@ -35,59 +35,31 @@ import {
 } from './installer.ts';
 import { addSkillToLocalLock, computeSkillFolderHash } from './local-lock.ts';
 import { searchMultiselect } from './prompts/search-multiselect.ts';
-import { cloneRepo, cleanupTempDir, GitCloneError } from './git.ts';
-import { discoverSkills, getSkillDisplayName, filterSkills } from './skills.ts';
 import {
-  installSkillForAgent,
-  installBlobSkillForAgent,
-  isSkillInstalled,
-  getCanonicalPath,
-  installWellKnownSkillForAgent,
-  type InstallMode,
-} from './installer.ts';
-import {
-  detectInstalledAgents,
-  agents,
-  getUniversalAgents,
-  getVisibleUniversalAgents,
-  getNonUniversalAgents,
-  isUniversalAgent,
-  getEveSubagents,
-} from './agents.ts';
-import {
-  track,
-  setVersion,
-  fetchAuditData,
-  type AuditResponse,
-  type PartnerAudit,
-} from './telemetry.ts';
-import { detectAgent, getAgentType } from './detect-agent.ts';
-import {
-  wellKnownProvider,
   computeWellKnownSkillDigest,
+  wellKnownProvider,
   WellKnownScopeNotFoundError,
   type WellKnownSkill,
 } from './providers/index.ts';
-import { downloadSource } from './download-source.ts';
+import { stripTerminalEscapes } from './sanitize.ts';
 import {
   addSkillToLock,
-  getGitHubToken,
-  isPromptDismissed,
   dismissPrompt,
+  getGitHubToken,
   getLastSelectedAgents,
+  isPromptDismissed,
   saveSelectedAgents,
 } from './skill-lock.ts';
-import { addSkillToLocalLock, computeSkillFolderHash } from './local-lock.ts';
-import type { Skill, AgentType } from './types.ts';
+import { discoverSkills, filterSkills, getSkillDisplayName } from './skills.ts';
+import { getOwnerRepo, isRepoPrivate, parseOwnerRepo, parseSource } from './source-parser.ts';
 import {
-  tryBlobInstall,
-  BLOB_ALLOWED_REPOS,
-  getSkillFolderHashFromTree,
-  fetchRepoTree,
-  type BlobSkill,
-  type BlobInstallResult,
-} from './blob.ts';
-import packageJson from '../package.json' with { type: 'json' };
+  fetchAuditData,
+  setVersion,
+  track,
+  type AuditResponse,
+  type PartnerAudit,
+} from './telemetry.ts';
+import type { AgentType, Skill } from './types.ts';
 
 // Helper to check if a value is a cancel symbol (works with both clack and our custom prompts)
 const isCancelled = (value: unknown): value is symbol => typeof value === 'symbol';
