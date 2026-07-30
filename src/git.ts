@@ -4,6 +4,12 @@ import { mkdtemp, mkdir, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import {
+  isSelfHostedGitLab,
+  getGitLabToken,
+  injectGitLabToken,
+  buildGitLabAuthError,
+} from './gitlab.ts';
 import { isGitHubHost } from './github-host.ts';
 
 const DEFAULT_CLONE_TIMEOUT_MS = 300_000; // 5 minutes
@@ -241,6 +247,17 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
   const cloneOptions = ref ? ['--depth', '1', '--branch', ref] : ['--depth', '1'];
   const repo = parseGitHubRepoUrl(url);
 
+  // Inject a personal access token for self-hosted GitLab instances when
+  // GITLAB_TOKEN (or GL_TOKEN) is set. This avoids interactive credential
+  // prompts and supports private repos without SSH key configuration.
+  const isGitLab = isSelfHostedGitLab(url);
+  if (isGitLab) {
+    const token = getGitLabToken();
+    if (token) {
+      url = injectGitLabToken(url, token);
+    }
+  }
+
   try {
     await createGitClient().clone(url, tempDir, cloneOptions);
     return tempDir;
@@ -263,6 +280,11 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
         true,
         false
       );
+    }
+
+    if (isAuthError && isGitLab) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw new GitCloneError(buildGitLabAuthError(url), url, false, true);
     }
 
     if (isAuthError && repo && isGitHubHttpsCloneUrl(url)) {

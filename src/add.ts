@@ -1,10 +1,39 @@
 import * as p from '@clack/prompts';
-import pc from 'picocolors';
 import { existsSync } from 'fs';
+import { createHash } from 'node:crypto';
 import { homedir } from 'os';
-import { sep, join, dirname } from 'path';
-import { parseSource, getOwnerRepo, parseOwnerRepo, isRepoPrivate } from './source-parser.ts';
-import { stripTerminalEscapes } from './sanitize.ts';
+import { dirname, join, sep } from 'path';
+import pc from 'picocolors';
+import packageJson from '../package.json' with { type: 'json' };
+import {
+  agents,
+  detectInstalledAgents,
+  getEveSubagents,
+  getNonUniversalAgents,
+  getUniversalAgents,
+  getVisibleUniversalAgents,
+  isUniversalAgent,
+} from './agents.ts';
+import {
+  BLOB_ALLOWED_REPOS,
+  fetchRepoTree,
+  getSkillFolderHashFromTree,
+  tryBlobInstall,
+  type BlobInstallResult,
+  type BlobSkill,
+} from './blob.ts';
+import { detectAgent, getAgentType } from './detect-agent.ts';
+import { cleanupTempDir, cloneRepo, GitCloneError } from './git.ts';
+import { promptGitLabSourceForInput, tryGitLabInstall } from './gitlab.ts';
+import {
+  getCanonicalPath,
+  installBlobSkillForAgent,
+  installSkillForAgent,
+  installWellKnownSkillForAgent,
+  isSkillInstalled,
+  type InstallMode,
+} from './installer.ts';
+import { addSkillToLocalLock, computeSkillFolderHash } from './local-lock.ts';
 import { searchMultiselect } from './prompts/search-multiselect.ts';
 import { cloneRepo, cleanupTempDir, GitCloneError } from './git.ts';
 import { discoverSkills, getSkillDisplayName, filterSkills } from './skills.ts';
@@ -184,7 +213,7 @@ function buildSecurityLines(
 
   // Footer link
   lines.push('');
-  lines.push(`${pc.dim('Details:')} ${pc.dim(`https://skills.sh/${source}`)}`);
+  lines.push(`${pc.dim('Details:')} ${pc.dim(`https://skills.kwal-it.nl/${source}`)}`);
 
   return lines;
 }
@@ -455,7 +484,7 @@ export async function promptForAgents(
  * Interactive agent selection using fuzzy search.
  * Shows universal agents as locked (always selected), and other agents as selectable.
  */
-async function selectAgentsInteractive(options: {
+export async function selectAgentsInteractive(options: {
   global?: boolean;
 }): Promise<AgentType[] | symbol> {
   // Filter out agents that don't support global installation when --global is used
@@ -1102,7 +1131,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     const spinner = p.spinner();
 
     spinner.start('Parsing source…');
-    const parsed = parseSource(source);
+    const parsed = parseSource(await promptGitLabSourceForInput(source));
     let directDownload = parsed.type === 'download';
     spinner.stop(
       `Source: ${parsed.type === 'local' ? parsed.localPath! : parsed.url}${parsed.ref ? ` @ ${pc.yellow(parsed.ref)}` : ''}${parsed.subpath ? ` (${parsed.subpath})` : ''}${parsed.skillFilter ? ` ${pc.dim('@')}${pc.cyan(parsed.skillFilter)}` : ''}`
@@ -1212,6 +1241,32 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         spinner.stop('Repository cloned');
 
         spinner.start('Discovering skills…');
+        skills = await discoverSkills(tempDir, parsed.subpath, {
+          includeInternal,
+          fullDepth: options.fullDepth,
+        });
+      }
+    } else if (parsed.type === 'gitlab' && !options.fullDepth) {
+      // Try the GitLab REST API fast path — lists and fetches SKILL.md files via
+      // /api/v4 with PRIVATE-TOKEN auth, avoiding a full git clone.
+      // Falls back to git clone if the API returns nothing or is unreachable.
+      spinner.start('Fetching skills...');
+      blobResult = await tryGitLabInstall(parsed.url, {
+        subpath: parsed.subpath,
+        skillFilter: parsed.skillFilter,
+        ref: parsed.ref,
+      });
+
+      if (blobResult) {
+        skills = blobResult.skills;
+        spinner.stop(`Found ${pc.green(skills.length)} skill${skills.length > 1 ? 's' : ''}`);
+      } else {
+        spinner.stop(pc.dim('Falling back to clone...'));
+        spinner.start('Cloning repository...');
+        tempDir = await cloneRepo(parsed.url, parsed.ref);
+        spinner.stop('Repository cloned');
+
+        spinner.start('Discovering skills...');
         skills = await discoverSkills(tempDir, parsed.subpath, {
           includeInternal,
           fullDepth: options.fullDepth,
@@ -1817,6 +1872,18 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       ? undefined
       : getProjectLockSourceUrl(parsed.type, parsed.url);
 
+    // Extract the repo origin for non-standard hosts (self-hosted GitLab, etc.) so a
+    // self-hosted telemetry server can fetch SKILL.md without a GITLAB_HOST env var.
+    let repoUrl: string | undefined;
+    try {
+      const u = new URL(parsed.url);
+      if (u.hostname !== 'github.com' && u.hostname !== 'gitlab.com') {
+        repoUrl = u.origin;
+      }
+    } catch {
+      /* ignore unparseable URLs */
+    }
+
     // Only track if we have a valid remote source and it's not a private repo.
     // repoPrivacyPromise was started early (right after parsing) so it has
     // already been running in parallel with the entire install — no stall here.
@@ -1824,9 +1891,12 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       const ownerRepo = parseOwnerRepo(normalizedSource);
       if (ownerRepo) {
         const isPrivate = await repoPrivacyPromise;
-        // Only send telemetry if repo is public (isPrivate === false)
-        // If we can't determine (null), err on the side of caution and skip telemetry
-        if (isPrivate === false) {
+        // Send telemetry if:
+        // - repo is explicitly public (isPrivate === false), OR
+        // - privacy is undetermined (null) and a custom telemetry server is set,
+        //   meaning the operator opted in to tracking non-GitHub/GitLab repos.
+        const customServer = !!process.env.SKILLS_TELEMETRY_URL;
+        if (isPrivate === false || (isPrivate === null && customServer)) {
           track({
             event: 'install',
             source: normalizedSource,
@@ -1834,6 +1904,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
             agents: targetAgents.join(','),
             ...(installGlobally && { global: '1' }),
             skillFiles: JSON.stringify(skillFiles),
+            ...(repoUrl && { repoUrl }),
             metadata: options.metadata,
           });
         }
@@ -1846,6 +1917,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           agents: targetAgents.join(','),
           ...(installGlobally && { global: '1' }),
           skillFiles: JSON.stringify(skillFiles),
+          ...(repoUrl && { repoUrl }),
           metadata: options.metadata,
         });
       }
