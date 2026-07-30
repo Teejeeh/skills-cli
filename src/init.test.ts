@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, rmSync, readFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runCliOutput, stripLogo } from './test-utils.ts';
 
 describe('init command', () => {
@@ -34,7 +34,7 @@ describe('init command', () => {
         GitHub:  Push to a repo, then npx skills add <owner>/<repo>
         URL:     Host the file, then npx skills add https://example.com/my-test-skill/SKILL.md
 
-      Browse existing skills for inspiration at https://skills.sh/
+      Browse existing skills for inspiration at https://skills.kwal-it.nl/
 
       "
     `);

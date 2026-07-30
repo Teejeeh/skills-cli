@@ -6,7 +6,7 @@ The CLI for the open agent skills ecosystem.
 Supports **OpenCode**, **Claude Code**, **Codex**, **Cursor**, and [70 more](#supported-agents).
 <!-- agent-list:end -->
 
-[![skills.sh](https://skills.sh/b/vercel-labs/skills)](https://skills.sh/vercel-labs/skills)
+[![skills.sh](https://skills.kwal-it.nl/b/vercel-labs/skills)](https://skills.kwal-it.nl/vercel-labs/skills)
 
 ## Install a Skill
 
@@ -238,7 +238,7 @@ Skills let agents perform specialized tasks like:
 - Creating PRs following your team's conventions
 - Integrating with external tools (Linear, Notion, etc.)
 
-Discover skills at **[skills.sh](https://skills.sh)**
+Discover skills at **[skills.sh](https://skills.kwal-it.nl)**
 
 ## Supported Agents
 
@@ -384,6 +384,7 @@ to also discover `SKILL.md` files outside these container directories
 (e.g. under `examples/` or `tests/`).
 
 <!-- skill-discovery:start -->
+
 - Root directory (if it contains `SKILL.md`)
 - `skills/`
 - `skills/.curated/`
@@ -516,7 +517,7 @@ Telemetry is automatically disabled in CI environments.
 ## Related Links
 
 - [Agent Skills Specification](https://agentskills.io)
-- [Skills Directory](https://skills.sh)
+- [Skills Directory](https://skills.kwal-it.nl)
 - [Amp Skills Documentation](https://ampcode.com/manual#agent-skills)
 - [Antigravity Skills Documentation](https://antigravity.google/docs/skills)
 - [Factory AI / Droid Skills Documentation](https://docs.factory.ai/cli/configuration/skills)
