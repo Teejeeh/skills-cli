@@ -1,9 +1,9 @@
 import * as readline from 'readline';
-import { runAdd, parseAddOptions } from './add.ts';
-import { sanitizeMetadata } from './sanitize.ts';
-import { track } from './telemetry.ts';
-import { isRepoPrivate } from './source-parser.ts';
+import { parseAddOptions, runAdd } from './add.ts';
 import { isRunningInAgent } from './detect-agent.ts';
+import { sanitizeMetadata } from './sanitize.ts';
+import { isRepoPrivate } from './source-parser.ts';
+import { track } from './telemetry.ts';
 
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
@@ -14,7 +14,7 @@ const MAGENTA = '\x1b[35m';
 const YELLOW = '\x1b[33m';
 
 // API endpoint for skills search
-const SEARCH_API_BASE = process.env.SKILLS_API_URL || 'https://skills.sh';
+const SEARCH_API_BASE = process.env.SKILLS_API_URL || 'https://skills.kwal-it.nl';
 const SEARCH_RESULT_LIMIT = '20';
 
 function formatInstalls(count: number): string {
@@ -177,7 +177,7 @@ async function runSearchPrompt(initialQuery = '', owner?: string): Promise<Searc
         const isSelected = i === selectedIndex;
         const arrow = isSelected ? `${BOLD}>${RESET}` : ' ';
         const name = isSelected ? `${BOLD}${skill.name}${RESET}` : `${TEXT}${skill.name}${RESET}`;
-        const source = skill.source ? ` ${DIM}${skill.source}${RESET}` : '';
+        const source = skill.source ? ` ${DIM}${displaySource(skill.source)}${RESET}` : '';
         const installs = formatInstalls(skill.installs);
         const installsBadge = installs ? ` ${CYAN}${installs}${RESET}` : '';
         const loadingIndicator = loading && i === 0 ? ` ${DIM}…${RESET}` : '';
@@ -304,9 +304,24 @@ async function runSearchPrompt(initialQuery = '', owner?: string): Promise<Searc
   });
 }
 
-// Parse owner/repo from a package string (for the find command)
+// Parse owner/repo from a package string or full URL (for the find command)
 function getOwnerRepoFromString(pkg: string): { owner: string; repo: string } | null {
-  // Handle owner/repo or owner/repo@skill
+  // Handle full URLs: https://github.com/owner/repo
+  try {
+    const url = new URL(pkg);
+    if (url.hostname === 'github.com') {
+      const parts = url.pathname
+        .slice(1)
+        .replace(/\.git$/, '')
+        .split('/');
+      if (parts.length >= 2 && parts[0] && parts[1]) {
+        return { owner: parts[0], repo: parts[1] };
+      }
+    }
+  } catch {
+    /* not a URL */
+  }
+  // Handle owner/repo or owner/repo@skill shorthands
   const atIndex = pkg.lastIndexOf('@');
   const repoPath = atIndex > 0 ? pkg.slice(0, atIndex) : pkg;
   const match = repoPath.match(/^([^/]+)\/([^/]+)$/);
@@ -314,6 +329,16 @@ function getOwnerRepoFromString(pkg: string): { owner: string; repo: string } | 
     return { owner: match[1]!, repo: match[2]! };
   }
   return null;
+}
+
+// Strip protocol+host from a full URL for display purposes
+function displaySource(source: string): string {
+  try {
+    const url = new URL(source);
+    return url.pathname.slice(1).replace(/\.git$/, '');
+  } catch {
+    return source;
+  }
 }
 
 async function isRepoPublic(owner: string, repo: string): Promise<boolean> {
@@ -361,9 +386,9 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
       const pkg = skill.source || skill.slug;
       const installs = formatInstalls(skill.installs);
       console.log(
-        `${TEXT}${pkg}@${skill.name}${RESET}${installs ? ` ${CYAN}${installs}${RESET}` : ''}`
+        `${TEXT}${displaySource(pkg)}@${skill.name}${RESET}${installs ? ` ${CYAN}${installs}${RESET}` : ''}`
       );
-      console.log(`${DIM}└ https://skills.sh/${skill.slug}${RESET}`);
+      console.log(`${DIM}└ https://skills.kwal-it.nl/${skill.slug}${RESET}`);
       console.log();
     }
     return;
@@ -410,10 +435,10 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
   const info = getOwnerRepoFromString(pkg);
   if (info && (await isRepoPublic(info.owner, info.repo))) {
     console.log(
-      `${DIM}View the skill at${RESET} ${TEXT}https://skills.sh/${selected.slug}${RESET}`
+      `${DIM}View the skill at${RESET} ${TEXT}https://skills.kwal-it.nl/${selected.slug}${RESET}`
     );
   } else {
-    console.log(`${DIM}Discover more skills at${RESET} ${TEXT}https://skills.sh${RESET}`);
+    console.log(`${DIM}Discover more skills at${RESET} ${TEXT}https://skills.kwal-it.nl${RESET}`);
   }
 
   console.log();
