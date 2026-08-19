@@ -493,8 +493,9 @@ export async function promptGitLabSourceForInput(input: string): Promise<string>
 
   const host = selected as string;
   if (host === GITHUB_BUILTIN_SOURCE.host) {
-    // GitHub selected — return input unchanged so parseSource routes it to GitHub
-    return isGlShorthand ? input.slice(3) : input;
+    // Force the GitHub parser path so a configured GitLab source cannot steal it.
+    const rest = isGlShorthand ? input.slice(3) : input;
+    return `github:${rest}`;
   }
   if (isGlShorthand) {
     return `${host}/${input.slice(3)}`;

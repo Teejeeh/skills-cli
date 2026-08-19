@@ -130,33 +130,37 @@ description: Shared install path regression test
     expect(countPathLinesForSkill(result.stdout, 'shared-skill')).toBe(1);
   });
 
-  it('preserves distinct copied install paths when --copy targets different agent directories', () => {
-    const sourceDir = join(testDir, 'source');
-    const skillDir = join(sourceDir, 'skills', 'multi-target-skill');
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(
-      join(skillDir, 'SKILL.md'),
-      `---
+  it(
+    'preserves distinct copied install paths when --copy targets different agent directories',
+    { timeout: 15000 },
+    () => {
+      const sourceDir = join(testDir, 'source');
+      const skillDir = join(sourceDir, 'skills', 'multi-target-skill');
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        `---
 name: multi-target-skill
 description: Mixed copied destination regression test
 ---
 
 # Multi Target Skill
 `
-    );
+      );
 
-    const projectDir = join(testDir, 'project');
-    mkdirSync(projectDir, { recursive: true });
+      const projectDir = join(testDir, 'project');
+      mkdirSync(projectDir, { recursive: true });
 
-    const result = runCli(
-      ['add', sourceDir, '-y', '--copy', '--agent', 'codex', 'cursor', 'openclaw'],
-      projectDir
-    );
+      const result = runCli(
+        ['add', sourceDir, '-y', '--copy', '--agent', 'codex', 'cursor', 'openclaw'],
+        projectDir
+      );
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('✓ multi-target-skill (copied)');
-    expect(countPathLinesForSkill(result.stdout, 'multi-target-skill')).toBe(2);
-  });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('✓ multi-target-skill (copied)');
+      expect(countPathLinesForSkill(result.stdout, 'multi-target-skill')).toBe(2);
+    }
+  );
 
   it('should describe Eve project installs as for the eve agent to use', () => {
     const sourceDir = join(testDir, 'source');

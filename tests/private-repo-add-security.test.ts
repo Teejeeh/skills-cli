@@ -42,10 +42,14 @@ vi.mock('../src/detect-agent.ts', () => ({
   ensureUniversalAgents: vi.fn((agents: string[]) => agents),
 }));
 
-vi.mock('../src/git.ts', () => ({
-  cloneRepo: vi.fn(),
-  cleanupTempDir: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock('../src/git.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/git.ts')>();
+  return {
+    ...actual,
+    cloneRepo: vi.fn(),
+    cleanupTempDir: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 import { runAdd } from '../src/add.ts';
 import { cloneRepo } from '../src/git.ts';

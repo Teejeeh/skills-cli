@@ -81,10 +81,14 @@ vi.mock('../src/source-parser.ts', async (importActual) => {
 
 // Simulate a GitHub clone without touching the network: cloneRepo returns a local
 // fixture directory. cleanupTempDir is a no-op so we control teardown ourselves.
-vi.mock('../src/git.ts', () => ({
-  cloneRepo: vi.fn(),
-  cleanupTempDir: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock('../src/git.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/git.ts')>();
+  return {
+    ...actual,
+    cloneRepo: vi.fn(),
+    cleanupTempDir: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 import { runAdd } from '../src/add.ts';
 import { cloneRepo } from '../src/git.ts';

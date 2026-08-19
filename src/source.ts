@@ -1,13 +1,13 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import {
-    getAllSources,
-    normalizeHost,
-    readSourcesConfigSync,
-    resetSourcesCache,
-    writeSourcesConfigSync,
-    type SourceEntry,
-    type SourceType,
+  getAllSources,
+  normalizeHost,
+  readSourcesConfigSync,
+  resetSourcesCache,
+  writeSourcesConfigSync,
+  type SourceEntry,
+  type SourceType,
 } from './sources-config.ts';
 
 const SUPPORTED_TYPES: SourceType[] = ['gitlab'];

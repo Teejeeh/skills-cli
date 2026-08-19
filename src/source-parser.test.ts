@@ -1,8 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseSource } from './source-parser.js';
+import { resetSourcesCache, writeSourcesConfigSync } from './sources-config.ts';
 
 describe('source-parser', () => {
+  beforeEach(() => {
+    writeSourcesConfigSync({ version: 1, sources: [] });
+    resetSourcesCache();
+  });
+
   afterEach(() => {
+    writeSourcesConfigSync({ version: 1, sources: [] });
+    resetSourcesCache();
     vi.unstubAllEnvs();
   });
 
@@ -180,13 +188,13 @@ describe('source-parser', () => {
     });
   });
 
-  describe('Self-hosted GitLab shorthand (GITLAB_HOST set)', () => {
+  describe('Self-hosted GitLab shorthand (configured source)', () => {
     beforeEach(() => {
-      process.env.GITLAB_HOST = 'https://gitlab.kwal-it.nl';
-    });
-
-    afterEach(() => {
-      delete process.env.GITLAB_HOST;
+      writeSourcesConfigSync({
+        version: 1,
+        sources: [{ type: 'gitlab', host: 'https://gitlab.kwal-it.nl' }],
+      });
+      resetSourcesCache();
     });
 
     it('does not double-prepend host when input starts with the GitLab hostname', () => {
@@ -199,6 +207,18 @@ describe('source-parser', () => {
       const result = parseSource('gitlab.kwal-it.nl/owner/repo');
       expect(result.type).toBe('gitlab');
       expect(result.url).toBe('https://gitlab.kwal-it.nl/owner/repo.git');
+    });
+
+    it('redirects bare owner/repo shorthand to the configured GitLab host', () => {
+      const result = parseSource('owner/repo');
+      expect(result.type).toBe('gitlab');
+      expect(result.url).toBe('https://gitlab.kwal-it.nl/owner/repo.git');
+    });
+
+    it('keeps an explicit github: prefix on GitHub', () => {
+      const result = parseSource('github:owner/repo');
+      expect(result.type).toBe('github');
+      expect(result.url).toBe('https://github.com/owner/repo.git');
     });
   });
 });

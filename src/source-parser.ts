@@ -280,6 +280,10 @@ function isHostedArtifactUrl(input: string): boolean {
 }
 
 export function parseSource(input: string): ParsedSource {
+  return parseSourceInternal(input, false);
+}
+
+function parseSourceInternal(input: string, skipGitLabShorthandRedirect: boolean): ParsedSource {
   // Local path: absolute, relative, or current directory
   if (isLocalPath(input)) {
     const resolvedPath = resolve(input);
@@ -308,24 +312,32 @@ export function parseSource(input: string): ParsedSource {
   // Also supports github:owner/repo/subpath and github:owner/repo@skill
   const githubPrefixMatch = input.match(/^github:(.+)$/);
   if (githubPrefixMatch) {
-    return parseSource(appendFragmentRef(githubPrefixMatch[1]!, fragmentRef, fragmentSkillFilter));
+    // Explicit github: prefix must stay on GitHub even when a GitLab source is configured.
+    return parseSourceInternal(
+      appendFragmentRef(githubPrefixMatch[1]!, fragmentRef, fragmentSkillFilter),
+      true
+    );
   }
 
   // Prefix shorthand: gl:owner/repo -> https://<GITLAB_HOST>/owner/repo
   const glExpanded = expandGlShorthand(input);
   if (glExpanded !== null) {
-    return parseSource(appendFragmentRef(glExpanded, fragmentRef, fragmentSkillFilter));
+    return parseSourceInternal(
+      appendFragmentRef(glExpanded, fragmentRef, fragmentSkillFilter),
+      skipGitLabShorthandRedirect
+    );
   }
 
   // Prefix shorthand: gitlab:owner/repo -> https://gitlab.com/owner/repo
   const gitlabPrefixMatch = input.match(/^gitlab:(.+)$/);
   if (gitlabPrefixMatch) {
-    return parseSource(
+    return parseSourceInternal(
       appendFragmentRef(
         `https://gitlab.com/${gitlabPrefixMatch[1]!}`,
         fragmentRef,
         fragmentSkillFilter
-      )
+      ),
+      skipGitLabShorthandRedirect
     );
   }
 
@@ -448,15 +460,19 @@ export function parseSource(input: string): ParsedSource {
 
   // When GitLab sources are configured, redirect bare owner/repo shorthands and
   // protocol-less hostname inputs to the matching GitLab instance first.
-  const glRedirect = redirectOwnerRepoToGitLab(input);
-  if (glRedirect) {
-    return parseSource(
-      appendFragmentRef(
-        glRedirect.redirectUrl,
-        fragmentRef,
-        fragmentSkillFilter || glRedirect.skillFilter
-      )
-    );
+  // Skip this for an explicit github: prefix so it cannot be stolen by GitLab.
+  if (!skipGitLabShorthandRedirect) {
+    const glRedirect = redirectOwnerRepoToGitLab(input);
+    if (glRedirect) {
+      return parseSourceInternal(
+        appendFragmentRef(
+          glRedirect.redirectUrl,
+          fragmentRef,
+          fragmentSkillFilter || glRedirect.skillFilter
+        ),
+        skipGitLabShorthandRedirect
+      );
+    }
   }
 
   // GH_HOST selects a GitHub Enterprise host for shorthand inputs; enterprise
