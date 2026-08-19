@@ -9,6 +9,8 @@ import {
   getGitLabToken,
   injectGitLabToken,
   buildGitLabAuthError,
+  buildGitLabConnectError,
+  isGitLabTlsError,
 } from './gitlab.ts';
 import { isGitHubHost } from './github-host.ts';
 
@@ -246,6 +248,7 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
   const tempDir = await mkdtemp(join(tmpdir(), 'skills-'));
   const cloneOptions = ref ? ['--depth', '1', '--branch', ref] : ['--depth', '1'];
   const repo = parseGitHubRepoUrl(url);
+  const displayUrl = url;
 
   // Inject a personal access token for self-hosted GitLab instances when
   // GITLAB_TOKEN (or GL_TOKEN) is set. This avoids interactive credential
@@ -276,7 +279,7 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
           `  - Private repo without credentials: ensure auth is configured\n` +
           `      - For SSH: ssh-add -l (to check loaded keys)\n` +
           `      - For HTTPS: gh auth status (if using GitHub CLI)`,
-        url,
+        displayUrl,
         true,
         false
       );
@@ -284,10 +287,15 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
 
     if (isAuthError && isGitLab) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      throw new GitCloneError(buildGitLabAuthError(url), url, false, true);
+      throw new GitCloneError(buildGitLabAuthError(displayUrl), displayUrl, false, true);
     }
 
-    if (isAuthError && repo && isGitHubHttpsCloneUrl(url)) {
+    if (isGitLab && isGitLabTlsError(errorMessage)) {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw new GitCloneError(buildGitLabConnectError(displayUrl), displayUrl, false, false);
+    }
+
+    if (isAuthError && repo && isGitHubHttpsCloneUrl(displayUrl)) {
       try {
         await resetTempDir(tempDir);
         if (await tryGhClone(repo, tempDir, ref)) {
@@ -313,10 +321,20 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
     await rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
     if (isAuthError) {
-      throw new GitCloneError(buildGitHubAuthError(url, repo, errorMessage), url, false, true);
+      throw new GitCloneError(
+        buildGitHubAuthError(displayUrl, repo, errorMessage),
+        displayUrl,
+        false,
+        true
+      );
     }
 
-    throw new GitCloneError(`Failed to clone ${url}: ${errorMessage}`, url, false, false);
+    throw new GitCloneError(
+      `Failed to clone ${displayUrl}: ${errorMessage}`,
+      displayUrl,
+      false,
+      false
+    );
   }
 }
 

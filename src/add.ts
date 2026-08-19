@@ -1102,8 +1102,11 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
   try {
     const spinner = p.spinner();
 
+    const resolvedSource = await promptGitLabSourceForInput(source, {
+      interactive: !options.yes && Boolean(process.stdin.isTTY),
+    });
     spinner.start('Parsing source…');
-    const parsed = parseSource(await promptGitLabSourceForInput(source));
+    const parsed = parseSource(resolvedSource);
     let directDownload = parsed.type === 'download';
     spinner.stop(
       `Source: ${parsed.type === 'local' ? parsed.localPath! : parsed.url}${parsed.ref ? ` @ ${pc.yellow(parsed.ref)}` : ''}${parsed.subpath ? ` (${parsed.subpath})` : ''}${parsed.skillFilter ? ` ${pc.dim('@')}${pc.cyan(parsed.skillFilter)}` : ''}`

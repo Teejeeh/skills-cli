@@ -215,7 +215,7 @@ npx skills add https://gitlab.company.com/group/repo/-/tree/main/skills/my-skill
 GITLAB_TOKEN=glpat-xxxx npx skills add gl:group/repo
 ```
 
-If any GitLab source is configured, ambiguous shorthands (`owner/repo` and `gl:owner/repo`) prompt you to pick a host, including GitHub.com. Use a full URL or `host/owner/repo` in scripts and CI to skip the prompt.
+If any GitLab source is configured, ambiguous shorthands (`owner/repo` and `gl:owner/repo`) prompt you to pick a host, including GitHub.com. `-y`, agents, and non-TTY sessions skip the prompt: `owner/repo` uses GitHub.com, and `gl:owner/repo` uses the first configured GitLab host. Use a full URL or `host/owner/repo` to pin a host.
 
 ### `skills update`
 

@@ -124,6 +124,42 @@ export function buildGitLabAuthError(url: string): string {
   );
 }
 
+export function isGitLabTlsError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('ssl_error_syscall') ||
+    lower.includes('ssl certificate') ||
+    lower.includes('ssl routines') ||
+    lower.includes('unexpected eof') ||
+    (lower.includes('tls') && lower.includes('handshake'))
+  );
+}
+
+/** Human-readable error when HTTPS to a configured GitLab host cannot complete TLS. */
+export function buildGitLabConnectError(url: string): string {
+  let hostname = 'the GitLab host';
+  let sshHint = 'git@<host>:<owner>/<repo>.git';
+  try {
+    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+    hostname = parsed.hostname;
+    const path = parsed.pathname.replace(/^\//, '').replace(/\.git$/, '');
+    if (path.includes('/')) {
+      sshHint = `git@${hostname}:${path}.git`;
+    }
+  } catch {
+    // keep defaults
+  }
+  return (
+    `Could not complete an HTTPS connection to ${hostname}.\n` +
+    `  Port 443 accepted the TCP connection, but the TLS handshake failed.\n` +
+    `  - Check that GitLab is serving HTTPS on this host (certificate / reverse proxy)\n` +
+    `  - If SSH works, install with:\n` +
+    `      skills add ${sshHint}\n` +
+    `  - If you meant GitHub instead:\n` +
+    `      skills add github:owner/repo`
+  );
+}
+
 // ─── Source parser integration ──────────────────────────────────────────────
 
 /**
@@ -453,12 +489,33 @@ export async function tryGitLabInstall(
 
 // ─── Source selection prompt ─────────────────────────────────────────────────
 
+export interface PromptGitLabSourceOptions {
+  /** When false, skip the picker and use GitHub (or the first GitLab host for `gl:`). */
+  interactive?: boolean;
+}
+
+function rewriteToSelectedHost(input: string, host: string, isGlShorthand: boolean): string {
+  if (host === GITHUB_BUILTIN_SOURCE.host) {
+    const rest = isGlShorthand ? input.slice(3) : input;
+    return `github:${rest}`;
+  }
+  if (isGlShorthand) {
+    return `${host}/${input.slice(3)}`;
+  }
+  // bare owner/repo — turn into a protocol-less host/path so the existing
+  // redirectOwnerRepoToGitLab path in parseSource handles it correctly
+  return `${new URL(host).hostname}/${input}`;
+}
+
 /**
- * When multiple GitLab sources are configured and the input is an ambiguous
- * bare shorthand (owner/repo or gl:owner/repo), prompt the user to pick a host.
+ * When GitLab sources are configured and the input is an ambiguous shorthand
+ * (`owner/repo` or `gl:owner/repo`), prompt the user to pick a host.
  * Returns the input unchanged in all other cases.
  */
-export async function promptGitLabSourceForInput(input: string): Promise<string> {
+export async function promptGitLabSourceForInput(
+  input: string,
+  options: PromptGitLabSourceOptions = {}
+): Promise<string> {
   const sources = getConfiguredGitLabSources();
   if (sources.length === 0) return input;
 
@@ -478,12 +535,35 @@ export async function promptGitLabSourceForInput(input: string): Promise<string>
 
   if (!isGlShorthand && !isBareShorthand) return input;
 
+  const interactive = options.interactive ?? Boolean(process.stdin.isTTY);
+
+  // Non-interactive (`-y`, agents, CI): GitHub is the labeled default for
+  // owner/repo. `gl:` means GitLab, so use the first configured GitLab host.
+  if (!interactive) {
+    if (isGlShorthand) {
+      const host = getGitLabHost();
+      return host ? `${host}/${input.slice(3)}` : input;
+    }
+    return `github:${input}`;
+  }
+
+  // `gl:owner/repo` with a single GitLab source is unambiguous.
+  if (isGlShorthand && sources.length === 1) {
+    return `${sources[0]!.host}/${input.slice(3)}`;
+  }
+
+  const gitlabOptions = sources.map((s) => ({ value: s.host, label: s.host }));
+  const selectOptions = isGlShorthand
+    ? gitlabOptions
+    : [
+        ...gitlabOptions,
+        { value: GITHUB_BUILTIN_SOURCE.host, label: `${GITHUB_BUILTIN_SOURCE.host}  (default)` },
+      ];
+
   const selected = await p.select({
-    message: 'Multiple sources configured — which one?',
-    options: [
-      ...sources.map((s) => ({ value: s.host, label: s.host })),
-      { value: GITHUB_BUILTIN_SOURCE.host, label: `${GITHUB_BUILTIN_SOURCE.host}  (default)` },
-    ],
+    message: 'Which source?',
+    options: selectOptions,
+    initialValue: isGlShorthand ? sources[0]!.host : GITHUB_BUILTIN_SOURCE.host,
   });
 
   if (p.isCancel(selected)) {
@@ -491,16 +571,5 @@ export async function promptGitLabSourceForInput(input: string): Promise<string>
     process.exit(0);
   }
 
-  const host = selected as string;
-  if (host === GITHUB_BUILTIN_SOURCE.host) {
-    // Force the GitHub parser path so a configured GitLab source cannot steal it.
-    const rest = isGlShorthand ? input.slice(3) : input;
-    return `github:${rest}`;
-  }
-  if (isGlShorthand) {
-    return `${host}/${input.slice(3)}`;
-  }
-  // bare owner/repo — turn into a protocol-less host/path so the existing
-  // redirectOwnerRepoToGitLab path in parseSource handles it correctly
-  return `${new URL(host).hostname}/${input}`;
+  return rewriteToSelectedHost(input, selected as string, isGlShorthand);
 }
