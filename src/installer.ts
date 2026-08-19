@@ -896,7 +896,7 @@ export async function installWellKnownSkillForAgent(
 }
 
 /**
- * Install a blob-downloaded skill (fetched from skills.sh download API).
+ * Install a blob-downloaded skill (fetched from skills.kwal-it.nl download API).
  * Similar to installWellKnownSkillForAgent but takes the snapshot file format
  * (array of { path, contents }) instead of a Map.
  */

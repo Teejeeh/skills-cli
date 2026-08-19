@@ -544,11 +544,11 @@ export interface AddOptions {
  * Discovers skills from /.well-known/agent-skills/index.json (preferred)
  * or /.well-known/skills/index.json (legacy fallback).
  */
-function isSkillsShPackUrl(url: string): boolean {
+function isSkillsPackUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const hostname = parsed.hostname.replace(/^www\./, '');
-    return hostname === 'skills.sh' && /^\/p\/[^/]+/.test(parsed.pathname);
+    return hostname === 'skills.kwal-it.nl' && /^\/p\/[^/]+/.test(parsed.pathname);
   } catch {
     return false;
   }
@@ -651,7 +651,7 @@ async function handleWellKnownSkills(
     const selected = await searchMultiselect({
       message: 'Select skills to install',
       items: skillChoices,
-      initialSelected: isSkillsShPackUrl(url) ? skills : undefined,
+      initialSelected: isSkillsPackUrl(url) ? skills : undefined,
       required: true,
       maxVisible: 20,
       selectAll: true,
@@ -1183,7 +1183,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     } else if (parsed.type === 'github' && !options.fullDepth) {
       // Try the blob-based fast install for GitHub sources; skip for --full-depth.
       // Eligible per repo (a BLOB_ALLOWED_REPOS entry = self-hosted download URL) or
-      // per owner (BLOB_ALLOWED_OWNERS = all their repos, skills.sh-hosted).
+      // per owner (BLOB_ALLOWED_OWNERS = all their repos, skills.kwal-it.nl-hosted).
       const BLOB_ALLOWED_OWNERS = ['vercel', 'vercel-labs', 'heygen-com'];
       const ownerRepo = getOwnerRepo(parsed);
       const owner = ownerRepo?.split('/')[0]?.toLowerCase();

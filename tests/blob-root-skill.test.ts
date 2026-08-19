@@ -38,7 +38,7 @@ describe('tryBlobInstall', () => {
   });
 
   it('bypasses ref-agnostic snapshots when an explicit ref is requested', async () => {
-    const result = await tryBlobInstall('vercel-labs/skills', {
+    const result = await tryBlobInstall('Teejeeh/skills-cli', {
       ref: '66a7b901aad3b30f541f646199ff0df3050b764b',
       skillFilter: 'find-skills',
     });

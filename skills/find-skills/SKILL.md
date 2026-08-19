@@ -42,7 +42,7 @@ When a user asks for help with something, identify:
 
 ### Step 2: Check the Leaderboard First
 
-Before running a CLI search, check the [skills.sh leaderboard](https://skills.kwal-it.nl/) to see if a well-known skill already exists for the domain. The leaderboard ranks skills by total installs, surfacing the most popular and battle-tested options.
+Before running a CLI search, check the [skills.kwal-it.nl leaderboard](https://skills.kwal-it.nl/) to see if a well-known skill already exists for the domain. The leaderboard ranks skills by total installs, surfacing the most popular and battle-tested options.
 
 For example, top skills for web development include:
 
@@ -78,7 +78,7 @@ When you find relevant skills, present them to the user with:
 1. The skill name and what it does
 2. The install count and source
 3. The install command they can run
-4. A link to learn more at skills.sh
+4. A link to learn more at skills.kwal-it.nl
 
 Example response:
 

@@ -55,7 +55,7 @@ describe('skills CLI', () => {
       expect(output).toContain('npx skills use');
       expect(output).toContain('npx skills update');
       expect(output).toContain('npx skills init');
-      expect(output).toContain('skills.sh');
+      expect(output).toContain('skills.kwal-it.nl');
     });
   });
 

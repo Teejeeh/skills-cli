@@ -2,12 +2,12 @@
  * Blob-based skill download utilities.
  *
  * Enables fast skill installation by fetching pre-built skill snapshots
- * from the skills.sh download API instead of cloning git repos.
+ * from the skills.kwal-it.nl download API instead of cloning git repos.
  *
  * Flow:
  *   1. GitHub Trees API → discover SKILL.md locations
  *   2. raw.githubusercontent.com → fetch frontmatter to get skill names
- *   3. skills.sh/api/download → fetch full file contents from cached blob
+ *   3. skills.kwal-it.nl/api/download → fetch full file contents from cached blob
  */
 
 import { createHash } from 'node:crypto';
@@ -455,7 +455,7 @@ async function fetchSkillMdContent(
 }
 
 /**
- * Fetch a skill's full file contents from the skills.sh download API.
+ * Fetch a skill's full file contents from the skills.kwal-it.nl download API.
  * Returns the files array and content hash, or null on failure.
  */
 async function fetchSkillDownload(
@@ -501,7 +501,7 @@ function computeSnapshotHash(files: SkillSnapshotFile[]): string {
  *   1. Fetch repo tree from GitHub Trees API
  *   2. Discover SKILL.md paths from the tree
  *   3. Fetch SKILL.md content from raw.githubusercontent.com (for frontmatter/name)
- *   4. Compute slugs and fetch full snapshots from skills.sh download API
+ *   4. Compute slugs and fetch full snapshots from skills.kwal-it.nl download API
  *
  * Returns the resolved BlobSkills + tree data on success, or null on any failure
  * (the caller should fall back to git clone).
@@ -607,7 +607,7 @@ export async function tryBlobInstall(
     if (filteredSkills.length === 0) return null;
   }
 
-  // 5. Fetch full snapshots from skills.sh download API in parallel
+  // 5. Fetch full snapshots from skills.kwal-it.nl download API in parallel
   const source = ownerRepo.toLowerCase();
   const downloads = await Promise.all(
     filteredSkills.map(async (skill) => {

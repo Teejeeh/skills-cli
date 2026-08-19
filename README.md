@@ -6,7 +6,7 @@ The CLI for the open agent skills ecosystem.
 Supports **OpenCode**, **Claude Code**, **Codex**, **Cursor**, and [73 more](#supported-agents).
 <!-- agent-list:end -->
 
-[![skills.sh](https://skills.kwal-it.nl/b/Teejeeh/skills-cli)](https://skills.kwal-it.nl/Teejeeh/skills-cli)
+[![skills.kwal-it.nl](https://skills.kwal-it.nl/b/Teejeeh/skills-cli)](https://skills.kwal-it.nl/Teejeeh/skills-cli)
 
 ## Install a Skill
 
@@ -306,7 +306,7 @@ Skills let agents perform specialized tasks like:
 - Creating PRs following your team's conventions
 - Integrating with external tools (Linear, Notion, etc.)
 
-Discover skills at **[skills.sh](https://skills.kwal-it.nl)**
+Discover skills at **[skills.kwal-it.nl](https://skills.kwal-it.nl)**
 
 ## Supported Agents
 
