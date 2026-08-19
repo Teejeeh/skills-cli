@@ -37,8 +37,14 @@ npx skills add https://github.com/vercel-labs/agent-skills
 # Direct path to a skill in a repo
 npx skills add https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines
 
-# GitLab URL
+# GitLab.com URL or prefix shorthand
 npx skills add https://gitlab.com/org/repo
+npx skills add gitlab:org/repo
+
+# Self-hosted GitLab (after `skills source add`)
+npx skills add gl:org/repo
+npx skills add gitlab.company.com/org/repo
+npx skills add https://gitlab.company.com/group/subgroup/repo
 
 # Any git URL
 npx skills add git@github.com:vercel-labs/agent-skills.git
@@ -132,14 +138,17 @@ When installing interactively, you can choose:
 
 ## Other Commands
 
-| Command                      | Description                                   |
-| ---------------------------- | --------------------------------------------- |
-| `npx skills use <source>`    | Use one skill without installing              |
-| `npx skills list`            | List installed skills (alias: `ls`)           |
-| `npx skills find [query]`    | Search for skills interactively or by keyword |
-| `npx skills remove [skills]` | Remove installed skills from agents           |
-| `npx skills update [skills]` | Update installed skills to latest versions    |
-| `npx skills init [name]`     | Create a new SKILL.md template                |
+| Command                           | Description                                   |
+| --------------------------------- | --------------------------------------------- |
+| `npx skills use <source>`         | Use one skill without installing              |
+| `npx skills list`                 | List installed skills (alias: `ls`)           |
+| `npx skills find [query]`         | Search for skills interactively or by keyword |
+| `npx skills source add <host>`    | Add a self-hosted GitLab skill source         |
+| `npx skills source list`          | List configured skill sources                 |
+| `npx skills source remove <host>` | Remove a configured source                    |
+| `npx skills remove [skills]`      | Remove installed skills from agents           |
+| `npx skills update [skills]`      | Update installed skills to latest versions    |
+| `npx skills init [name]`          | Create a new SKILL.md template                |
 
 ### `skills list`
 
@@ -170,6 +179,43 @@ npx skills find typescript
 # Search across every repository owned by an organization or user
 npx skills find react --owner vercel
 ```
+
+### `skills source`
+
+Add self-hosted GitLab instances as skill sources. GitHub.com is always available as a built-in source. Custom sources currently support GitLab only.
+
+```bash
+# Add a GitLab instance (type is auto-detected, defaults to gitlab)
+npx skills source add gitlab.company.com
+
+# Explicit type
+npx skills source add gitlab.company.com --type gitlab
+
+# List configured sources (includes the built-in GitHub.com source)
+npx skills source list
+
+# Remove a source
+npx skills source remove gitlab.company.com
+```
+
+Once a source is added, install skills from it with any of these formats:
+
+```bash
+# gl: shorthand — uses a configured GitLab source
+npx skills add gl:group/repo
+
+# Host in the path (no prompt)
+npx skills add gitlab.company.com/group/repo
+
+# Full URL, including subgroups and tree paths
+npx skills add https://gitlab.company.com/group/subgroup/repo
+npx skills add https://gitlab.company.com/group/repo/-/tree/main/skills/my-skill
+
+# Private repositories
+GITLAB_TOKEN=glpat-xxxx npx skills add gl:group/repo
+```
+
+If any GitLab source is configured, ambiguous shorthands (`owner/repo` and `gl:owner/repo`) prompt you to pick a host, including GitHub.com. Use a full URL or `host/owner/repo` in scripts and CI to skip the prompt.
 
 ### `skills update`
 
@@ -470,6 +516,7 @@ discover `SKILL.md` files outside these container directories (e.g. under
 - `.neovate/skills/`
 - `.pochi/skills/`
 - `.adal/skills/`
+
 <!-- skill-discovery:end -->
 
 ### Plugin Manifest Discovery
@@ -527,6 +574,8 @@ Ensure you have write access to the target directory.
 | Variable                  | Description                                                                |
 | ------------------------- | -------------------------------------------------------------------------- |
 | `INSTALL_INTERNAL_SKILLS` | Set to `1` or `true` to show and install skills marked as `internal: true` |
+| `GITLAB_TOKEN`            | Personal access token for private GitLab repos (`read_repository` scope)   |
+| `GL_TOKEN`                | Fallback for `GITLAB_TOKEN`                                                |
 | `DISABLE_TELEMETRY`       | Set to disable anonymous usage telemetry                                   |
 | `DO_NOT_TRACK`            | Alternative way to disable telemetry                                       |
 | `GITHUB_TOKEN`            | Optional explicit token for authenticated GitHub API requests              |
