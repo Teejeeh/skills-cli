@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { initTelemetry, parseAddOptions, runAdd } from './add.ts';
 import { runConfig } from './config.ts';
+import { getSkillsSiteUrl } from './constants.ts';
 import { isRunningInAgent } from './detect-agent.ts';
 import { runFind } from './find.ts';
 import { runInstallFromLock } from './install.ts';
@@ -106,7 +107,7 @@ function showBanner(): void {
   console.log();
   console.log(`${DIM}try:${RESET} npx skills add vercel-labs/agent-skills`);
   console.log();
-  console.log(`Discover more skills at ${TEXT}https://skills.kwal-it.nl/${RESET}`);
+  console.log(`Discover more skills at ${TEXT}${getSkillsSiteUrl()}/${RESET}`);
   console.log();
 }
 
@@ -209,7 +210,7 @@ ${BOLD}Examples:${RESET}
   ${DIM}$${RESET} skills experimental_sync              ${DIM}# sync from node_modules${RESET}
   ${DIM}$${RESET} skills experimental_sync -y           ${DIM}# sync without prompts${RESET}
 
-Discover more skills at ${TEXT}https://skills.kwal-it.nl/${RESET}
+Discover more skills at ${TEXT}${getSkillsSiteUrl()}/${RESET}
 `);
 }
 
@@ -240,7 +241,7 @@ ${BOLD}Examples:${RESET}
   ${DIM}$${RESET} skills remove --all                      ${DIM}# remove all skills${RESET}
   ${DIM}$${RESET} skills remove --skill '*' -a cursor      ${DIM}# remove all skills from cursor${RESET}
 
-Discover more skills at ${TEXT}https://skills.kwal-it.nl/${RESET}
+Discover more skills at ${TEXT}${getSkillsSiteUrl()}/${RESET}
 `);
 }
 
@@ -303,9 +304,7 @@ Describe when this skill should be used.
     `  ${DIM}URL:${RESET}     Host the file, then ${TEXT}npx skills add https://example.com/${displayPath}${RESET}`
   );
   console.log();
-  console.log(
-    `Browse existing skills for inspiration at ${TEXT}https://skills.kwal-it.nl/${RESET}`
-  );
+  console.log(`Browse existing skills for inspiration at ${TEXT}${getSkillsSiteUrl()}/${RESET}`);
   console.log();
 }
 

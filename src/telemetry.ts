@@ -1,5 +1,4 @@
-const TELEMETRY_URL = process.env.SKILLS_TELEMETRY_URL ?? 'https://add-skill.vercel.sh/t';
-const AUDIT_URL = process.env.SKILLS_AUDIT_URL ?? 'https://add-skill.vercel.sh/audit';
+import { getSkillsAuditUrl, getSkillsTelemetryUrl } from './constants.ts';
 
 interface InstallTelemetryData {
   event: 'install';
@@ -130,7 +129,7 @@ export async function fetchAuditData(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(`${AUDIT_URL}?${params.toString()}`, {
+    const response = await fetch(`${getSkillsAuditUrl()}?${params.toString()}`, {
       signal: controller.signal,
     });
     clearTimeout(timeout);
@@ -176,7 +175,7 @@ export function track(data: TelemetryData): void {
 
     // Fire and forget during the workflow, but track the promise so
     // flushTelemetry() can await it before the process exits.
-    const p = fetch(`${TELEMETRY_URL}?${params.toString()}`)
+    const p = fetch(`${getSkillsTelemetryUrl()}?${params.toString()}`)
       .catch(() => {})
       .then(() => {});
     pendingTelemetry.push(p);

@@ -7,4 +7,5 @@ import { resetSourcesCache } from './src/sources-config.ts';
 // inherit the developer machine's GitLab/GitHub source list.
 const isolatedStateHome = mkdtempSync(join(tmpdir(), 'skills-cli-test-state-'));
 process.env.XDG_STATE_HOME = isolatedStateHome;
+delete process.env.SKILLS_SITE_URL;
 resetSourcesCache();

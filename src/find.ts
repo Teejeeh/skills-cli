@@ -1,5 +1,6 @@
 import * as readline from 'readline';
 import { parseAddOptions, runAdd } from './add.ts';
+import { getSkillsSiteUrl } from './constants.ts';
 import { isRunningInAgent } from './detect-agent.ts';
 import { sanitizeMetadata } from './sanitize.ts';
 import { isRepoPrivate } from './source-parser.ts';
@@ -13,8 +14,6 @@ const CYAN = '\x1b[36m';
 const MAGENTA = '\x1b[35m';
 const YELLOW = '\x1b[33m';
 
-// API endpoint for skills search
-const SEARCH_API_BASE = process.env.SKILLS_API_URL || 'https://skills.kwal-it.nl';
 const SEARCH_RESULT_LIMIT = '20';
 
 function formatInstalls(count: number): string {
@@ -88,7 +87,7 @@ export async function searchSkillsAPI(query: string, owner?: string): Promise<Se
   try {
     const params = new URLSearchParams({ q: query, limit: SEARCH_RESULT_LIMIT });
     if (owner) params.set('owner', owner);
-    const url = `${SEARCH_API_BASE}/api/search?${params.toString()}`;
+    const url = `${getSkillsSiteUrl()}/api/search?${params.toString()}`;
     const res = await fetch(url);
 
     if (!res.ok) return [];
@@ -388,7 +387,7 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
       console.log(
         `${TEXT}${displaySource(pkg)}@${skill.name}${RESET}${installs ? ` ${CYAN}${installs}${RESET}` : ''}`
       );
-      console.log(`${DIM}└ https://skills.kwal-it.nl/${skill.slug}${RESET}`);
+      console.log(`${DIM}└ ${getSkillsSiteUrl()}/${skill.slug}${RESET}`);
       console.log();
     }
     return;
@@ -435,10 +434,10 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
   const info = getOwnerRepoFromString(pkg);
   if (info && (await isRepoPublic(info.owner, info.repo))) {
     console.log(
-      `${DIM}View the skill at${RESET} ${TEXT}https://skills.kwal-it.nl/${selected.slug}${RESET}`
+      `${DIM}View the skill at${RESET} ${TEXT}${getSkillsSiteUrl()}/${selected.slug}${RESET}`
     );
   } else {
-    console.log(`${DIM}Discover more skills at${RESET} ${TEXT}https://skills.kwal-it.nl${RESET}`);
+    console.log(`${DIM}Discover more skills at${RESET} ${TEXT}${getSkillsSiteUrl()}${RESET}`);
   }
 
   console.log();

@@ -12,11 +12,11 @@
 
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { DEFAULT_SKILL_CONTAINER_DEPTH, getSkillsSiteUrl } from './constants.ts';
 import { parseFrontmatter } from './frontmatter.ts';
-import { sanitizeMetadata } from './sanitize.ts';
 import { getGitHubHost } from './github-host.ts';
+import { sanitizeMetadata } from './sanitize.ts';
 import type { Skill } from './types.ts';
-import { DEFAULT_SKILL_CONTAINER_DEPTH } from './constants.ts';
 
 // ─── Types ───
 
@@ -44,8 +44,6 @@ export interface BlobSkill extends Skill {
 }
 
 // ─── Constants ───
-
-const DOWNLOAD_BASE_URL = process.env.SKILLS_DOWNLOAD_URL || 'https://skills.kwal-it.nl';
 
 // Repos that self-host their downloads on the blob fast-path
 export const BLOB_ALLOWED_REPOS: Record<string, { downloadUrl: (slug: string) => string }> = {
@@ -464,7 +462,7 @@ async function fetchSkillDownload(
 ): Promise<SkillDownloadResponse | null> {
   try {
     const [owner, repo] = source.split('/');
-    const defaultUrl = `${DOWNLOAD_BASE_URL}/api/download/${encodeURIComponent(owner!)}/${encodeURIComponent(repo!)}/${encodeURIComponent(slug)}`;
+    const defaultUrl = `${getSkillsSiteUrl()}/api/download/${encodeURIComponent(owner!)}/${encodeURIComponent(repo!)}/${encodeURIComponent(slug)}`;
     // Self-hosted repos build their own URL; otherwise fall back to the default.
     const selfHosted = BLOB_ALLOWED_REPOS[source.toLowerCase()]?.downloadUrl(slug);
     const url = selfHosted ?? defaultUrl;

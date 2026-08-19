@@ -21,6 +21,12 @@ import {
   type BlobInstallResult,
   type BlobSkill,
 } from './blob.ts';
+import {
+  DEFAULT_SKILLS_SITE_URL,
+  getSkillsSiteUrl,
+  isCustomTelemetryServer,
+  isSkillsSiteUrl,
+} from './constants.ts';
 import { detectAgent, getAgentType } from './detect-agent.ts';
 import { downloadSource } from './download-source.ts';
 import { cleanupTempDir, cloneRepo, GitCloneError } from './git.ts';
@@ -185,7 +191,7 @@ function buildSecurityLines(
 
   // Footer link
   lines.push('');
-  lines.push(`${pc.dim('Details:')} ${pc.dim(`https://skills.kwal-it.nl/${source}`)}`);
+  lines.push(`${pc.dim('Details:')} ${pc.dim(`${getSkillsSiteUrl()}/${source}`)}`);
 
   return lines;
 }
@@ -547,8 +553,7 @@ export interface AddOptions {
 function isSkillsPackUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    const hostname = parsed.hostname.replace(/^www\./, '');
-    return hostname === 'skills.kwal-it.nl' && /^\/p\/[^/]+/.test(parsed.pathname);
+    return isSkillsSiteUrl(url) && /^\/p\/[^/]+/.test(parsed.pathname);
   } catch {
     return false;
   }
@@ -1193,7 +1198,12 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
       const isSelfHostedRepo =
         !!ownerRepo && Object.hasOwn(BLOB_ALLOWED_REPOS, ownerRepo.toLowerCase());
       if (ownerRepo && owner && (isSelfHostedRepo || BLOB_ALLOWED_OWNERS.includes(owner))) {
-        spinner.start('Fetching skills…');
+        const downloadBase = getSkillsSiteUrl();
+        spinner.start(
+          downloadBase === DEFAULT_SKILLS_SITE_URL
+            ? 'Fetching skills…'
+            : `Fetching skills from ${downloadBase}…`
+        );
         blobResult = await tryBlobInstall(ownerRepo, {
           subpath: parsed.subpath,
           skillFilter: parsed.skillFilter,
@@ -1202,7 +1212,11 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
           includeInternal,
         });
         if (!blobResult) {
-          spinner.stop(pc.dim('Falling back to clone…'));
+          spinner.stop(
+            downloadBase === DEFAULT_SKILLS_SITE_URL
+              ? pc.dim('Falling back to clone…')
+              : pc.dim(`Falling back to clone… (no snapshot at ${downloadBase})`)
+          );
         }
       }
 
@@ -1870,7 +1884,7 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
         // - repo is explicitly public (isPrivate === false), OR
         // - privacy is undetermined (null) and a custom telemetry server is set,
         //   meaning the operator opted in to tracking non-GitHub/GitLab repos.
-        const customServer = !!process.env.SKILLS_TELEMETRY_URL;
+        const customServer = isCustomTelemetryServer();
         if (isPrivate === false || (isPrivate === null && customServer)) {
           track({
             event: 'install',

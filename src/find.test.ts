@@ -49,6 +49,22 @@ describe('searchSkillsAPI', () => {
     expect(url.searchParams.get('q')).toBe('react native');
     expect(url.searchParams.get('owner')).toBe('vercel');
     expect(url.searchParams.get('limit')).toBe('20');
+    expect(url.origin).toBe('https://skills.kwal-it.nl');
+  });
+
+  it('uses SKILLS_SITE_URL for search when set', async () => {
+    vi.stubEnv('SKILLS_SITE_URL', 'http://localhost:3000');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ skills: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await searchSkillsAPI('react');
+
+    const url = new URL(fetchMock.mock.calls[0]![0] as string);
+    expect(url.origin).toBe('http://localhost:3000');
+    expect(url.pathname).toBe('/api/search');
   });
 
   it('prints every result returned for a non-interactive query', async () => {
