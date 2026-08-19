@@ -7,7 +7,7 @@
  * `--full-depth`, while keeping the flat-layout, manifest, and
  * `examples/` / `tests/` behaviors intact.
  *
- * See: https://github.com/vercel-labs/skills/issues/747
+ * See: https://github.com/Teejeeh/skills-cli/issues/747
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';

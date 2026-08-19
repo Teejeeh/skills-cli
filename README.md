@@ -6,7 +6,7 @@ The CLI for the open agent skills ecosystem.
 Supports **OpenCode**, **Claude Code**, **Codex**, **Cursor**, and [73 more](#supported-agents).
 <!-- agent-list:end -->
 
-[![skills.sh](https://skills.kwal-it.nl/b/vercel-labs/skills)](https://skills.kwal-it.nl/vercel-labs/skills)
+[![skills.sh](https://skills.kwal-it.nl/b/Teejeeh/skills-cli)](https://skills.kwal-it.nl/Teejeeh/skills-cli)
 
 ## Install a Skill
 

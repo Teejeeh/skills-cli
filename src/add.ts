@@ -2175,7 +2175,7 @@ async function promptForFindSkills(
 
       try {
         // Call runAdd directly
-        await runAdd(['vercel-labs/skills'], {
+        await runAdd(['Teejeeh/skills-cli'], {
           skill: ['find-skills'],
           global: true,
           yes: true,
@@ -2183,13 +2183,13 @@ async function promptForFindSkills(
         });
       } catch {
         p.log.warn('Failed to install find-skills. You can try again with:');
-        p.log.message(pc.dim('  npx skills add vercel-labs/skills@find-skills -g -y --all'));
+        p.log.message(pc.dim('  npx skills add Teejeeh/skills-cli@find-skills -g -y --all'));
       }
     } else {
       // User declined - dismiss the prompt
       await dismissPrompt('findSkillsPrompt');
       p.log.message(
-        pc.dim('You can install it later with: npx skills add vercel-labs/skills@find-skills')
+        pc.dim('You can install it later with: npx skills add Teejeeh/skills-cli@find-skills')
       );
     }
   } catch {
