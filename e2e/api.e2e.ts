@@ -295,8 +295,8 @@ describe('programmatic API', () => {
     await writeFile(
       join(dir, 'consumer.ts'),
       [
-        "import { diagnostics, installSkills, listSkills, resolveSource, version } from 'skills';",
-        "import type { InstallResult, SkillsConfig, SkillSource } from 'skills';",
+        `import { diagnostics, installSkills, listSkills, resolveSource, version } from '${inject('packageName')}';`,
+        `import type { InstallResult, SkillsConfig, SkillSource } from '${inject('packageName')}';`,
         '',
         "const config: SkillsConfig = { scope: 'project', agents: { include: ['codex'] } };",
         'export async function run(cwd: string): Promise<string> {',

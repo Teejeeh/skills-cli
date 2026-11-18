@@ -118,7 +118,7 @@ export class Sandbox {
       script,
       [
         "import { writeFileSync } from 'node:fs';",
-        "import * as api from 'skills';",
+        `import * as api from '${inject('packageName')}';`,
         'const [project, home, out] = process.argv.slice(2);',
         'async function codeOf(promise) {',
         '  try { await promise; return null; } catch (error) {',

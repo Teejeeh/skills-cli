@@ -41,7 +41,7 @@ describe('packed package', () => {
   it('exposes the programmatic API through the exports map', async () => {
     // Resolve `skills` the way a consumer would: a script in the install prefix.
     const script = [
-      "const api = await import('skills');",
+      `const api = await import('${inject('packageName')}');`,
       'console.log(JSON.stringify({',
       '  exports: Object.keys(api).sort(),',
       "  agent: api.getSupportedAgents().some((a) => a.id === 'claude-code'),",
@@ -75,7 +75,7 @@ describe('packed package', () => {
       [
         '--input-type=module',
         '-e',
-        "import { fileURLToPath } from 'node:url'; console.log(fileURLToPath(import.meta.resolve('skills/bin/cli.mjs', import.meta.url)));",
+        `import { fileURLToPath } from 'node:url'; console.log(fileURLToPath(import.meta.resolve('${inject('packageName')}/bin/cli.mjs', import.meta.url)));`,
       ],
       { cwd: inject('installDir'), env: cleanEnv() }
     );

@@ -11,8 +11,10 @@ declare module 'vitest' {
     e2eRoot: string;
     /** Absolute path to the installed package's bin script (run with `node`). */
     skillsBin: string;
-    /** Directory the package was installed into (`<dir>/node_modules/skills`). */
+    /** Directory the package was installed into (`<dir>/node_modules/<packageName>`). */
     installDir: string;
+    /** The package's npm name, as consumers import it (the fork publishes a scoped name). */
+    packageName: string;
     /** The packed tarball, or null when SKILLS_E2E_PACKAGE points at a registry spec. */
     tarball: string | null;
     /** Shared npm cache for every npm call in the run. */
@@ -61,7 +63,10 @@ export default async function setup(project: TestProject) {
     cleanEnv({ HOME: npmHome, USERPROFILE: npmHome, npm_config_cache: npmCache })
   );
 
-  const pkgDir = join(installDir, 'node_modules', 'skills');
+  const { name: packageName } = JSON.parse(
+    await readFile(join(repoRoot, 'package.json'), 'utf8')
+  ) as { name: string };
+  const pkgDir = join(installDir, 'node_modules', ...packageName.split('/'));
   const pkg = JSON.parse(await readFile(join(pkgDir, 'package.json'), 'utf8')) as {
     bin: Record<string, string>;
   };
@@ -70,6 +75,7 @@ export default async function setup(project: TestProject) {
   project.provide('e2eRoot', root);
   project.provide('skillsBin', skillsBin);
   project.provide('installDir', installDir);
+  project.provide('packageName', packageName);
   project.provide('tarball', tarball);
   project.provide('npmCache', npmCache);
 

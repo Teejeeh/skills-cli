@@ -30,6 +30,8 @@ const PASSTHROUGH = [
   'npm_config_registry',
   'GITHUB_TOKEN',
   'GH_TOKEN',
+  // Fork: lets the suite target a specific skills site (blob snapshots, search).
+  'SKILLS_SITE_URL',
 ];
 
 export function cleanEnv(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
