@@ -16,6 +16,7 @@
 
 import * as p from '@clack/prompts';
 import {
+  computeSnapshotHash,
   toSkillSlug,
   type BlobInstallResult,
   type BlobSkill,
@@ -24,6 +25,7 @@ import {
   type TreeEntry,
 } from './blob.ts';
 import { parseFrontmatter } from './frontmatter.ts';
+import { isInternalSkill } from './skills.ts';
 import { getConfiguredGitLabSources, GITHUB_BUILTIN_SOURCE } from './sources-config.ts';
 import type { ParsedSource } from './types.ts';
 
@@ -341,6 +343,30 @@ export async function fetchGitLabRepoTree(
 }
 
 /**
+ * Resolve `ref` (branch, tag, or HEAD) to a full commit SHA via the GitLab REST API.
+ * Returns null when the API is unreachable or the ref is unknown.
+ */
+export async function fetchGitLabCommitSha(
+  host: string,
+  projectPath: string,
+  ref: string,
+  token: string | null
+): Promise<string | null> {
+  const encodedPath = encodeURIComponent(projectPath);
+  const url = `${host}/api/v4/projects/${encodedPath}/repository/commits/${encodeURIComponent(ref)}`;
+  const headers: Record<string, string> = { 'User-Agent': 'skills-cli' };
+  if (token) headers['PRIVATE-TOKEN'] = token;
+  try {
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { id?: unknown };
+    return typeof body.id === 'string' && /^[0-9a-f]{40}$/i.test(body.id) ? body.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch the raw content of a single file via the GitLab REST API.
  *
  * Uses /api/v4/projects/:id/repository/files/:path/raw with PRIVATE-TOKEN
@@ -394,6 +420,7 @@ export async function tryGitLabInstall(
     subpath?: string;
     skillFilter?: string;
     ref?: string;
+    includeInternal?: boolean;
   }
 ): Promise<BlobInstallResult | null> {
   if (!isSelfHostedGitLab(cloneUrl)) return null;
@@ -403,7 +430,11 @@ export async function tryGitLabInstall(
   const projectPath = parseGitLabProjectPath(cloneUrl);
   if (!projectPath) return null;
 
-  const ref = options.ref ?? 'HEAD';
+  const requestedRef = options.ref ?? 'HEAD';
+  // Pin every read to one commit so the tree and file contents agree, and so the
+  // lock entry can record the commit (lock v2 restores fetch exactly that commit).
+  const commit = await fetchGitLabCommitSha(host, projectPath, requestedRef, token);
+  const ref = commit ?? requestedRef;
 
   const tree = await fetchGitLabRepoTree(host, projectPath, ref, token);
   if (!tree) return null;
@@ -429,6 +460,7 @@ export async function tryGitLabInstall(
       const rawName = data.name ? String(data.name) : null;
       const rawDesc = data.description ? String(data.description) : null;
       if (!rawName || !rawDesc) return null;
+      if (isInternalSkill(data.metadata) && !options.includeInternal) return null;
 
       const slug = toSkillSlug(rawName);
       if (options.skillFilter && toSkillSlug(options.skillFilter) !== slug) return null;
@@ -470,7 +502,7 @@ export async function tryGitLabInstall(
         rawContent: content,
         metadata: data.metadata as Record<string, unknown> | undefined,
         files: fileEntries as SkillSnapshotFile[],
-        snapshotHash: '',
+        snapshotHash: computeSnapshotHash(fileEntries as SkillSnapshotFile[]),
         repoPath: skillMdPath,
       };
     })
@@ -481,10 +513,10 @@ export async function tryGitLabInstall(
 
   const repoTree: RepoTree = {
     sha: ref,
-    branch: ref,
+    branch: requestedRef,
     tree: tree.map((e): TreeEntry => ({ path: e.path, type: e.type, sha: e.id })),
   };
-  return { skills, tree: repoTree };
+  return { skills, tree: repoTree, ...(commit && { commit }) };
 }
 
 // ─── Source selection prompt ─────────────────────────────────────────────────

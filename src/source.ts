@@ -1,5 +1,5 @@
 import * as p from '@clack/prompts';
-import pc from 'picocolors';
+import { pc } from './color.ts';
 import {
   getAllSources,
   normalizeHost,
@@ -40,7 +40,8 @@ export async function runSourceCommand(args: string[]): Promise<void> {
           `  skills source list\n` +
           `  skills source remove gitlab.kwal-it.nl\n`
       );
-      process.exit(1);
+      process.exitCode = 1;
+      return;
   }
 }
 
@@ -64,7 +65,8 @@ async function sourceAdd(args: string[]): Promise<void> {
   const host = args.find((a) => !a.startsWith('-'));
   if (!host) {
     p.log.error('Usage: skills source add <host> [--type gitlab]');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const typeIndex = args.indexOf('--type');
@@ -77,7 +79,8 @@ async function sourceAdd(args: string[]): Promise<void> {
       p.log.error(
         `Unsupported source type: ${pc.cyan(typeArg ?? '')}. Supported: ${SUPPORTED_TYPES.join(', ')}`
       );
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
     type = typeArg as SourceType;
   } else {
@@ -133,7 +136,8 @@ function sourceRemove(args: string[]): void {
   const host = args.find((a) => !a.startsWith('-'));
   if (!host) {
     p.log.error('Usage: skills source remove <host>');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const normalized = normalizeHost(host);
@@ -141,7 +145,8 @@ function sourceRemove(args: string[]): void {
   const idx = config.sources.findIndex((s) => s.host === normalized);
   if (idx < 0) {
     p.log.error(`Source not found: ${pc.cyan(normalized)}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   config.sources.splice(idx, 1);

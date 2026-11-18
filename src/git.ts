@@ -1,9 +1,10 @@
-import simpleGit from 'simple-git';
+import { simpleGit } from 'simple-git';
 import { join, normalize, resolve, sep } from 'path';
 import { mkdtemp, mkdir, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { diagnostics } from './diagnostics.ts';
 import {
   isSelfHostedGitLab,
   getGitLabToken,
@@ -24,25 +25,71 @@ const CLONE_TIMEOUT_MS = (() => {
 })();
 const execFileAsync = promisify(execFile);
 
+/**
+ * Whether a ref is a full 40-character Git commit SHA.
+ *
+ * Used only to decide whether the commit-SHA fetch fallback is worth attempting
+ * after a `--branch` clone fails. The fetch-by-SHA protocol requires the full
+ * 40-char SHA; abbreviated SHAs are rejected by the server, so they are not
+ * matched here. Branch and tag detection is never inferred from the string:
+ * `--branch` is always tried first, so any real branch or tag (including a
+ * hex-looking name like "deadbeef" or a 40-char-hex name) resolves correctly
+ * before the SHA fallback is ever considered.
+ */
+export function isCommitSha(ref: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(ref);
+}
+
+/**
+ * Whether a clone or fetch error means the requested ref does not exist as a
+ * branch or tag. `git clone --branch <sha>` fails this way because `--branch`
+ * only accepts branch or tag names, never a bare commit SHA.
+ *
+ * These messages come from the git client and the server `upload-pack`, not from
+ * the host, so they are identical across GitHub, GitLab, self-hosted git, and
+ * `gh` (which wraps git). Verified on git 2.53. The variants cover the different
+ * code paths a missing ref can surface through:
+ *   - `clone --branch <ref>`            -> "Remote branch <ref> not found in upstream origin"
+ *   - GitHub shorthand fetch path       -> "couldn't find remote ref <ref>"
+ *   - server-side fetch by SHA rejected -> "upload-pack: not our ref <ref>"
+ */
+export function isMissingRefError(message: string): boolean {
+  return (
+    /Remote branch .* not found in upstream origin/i.test(message) ||
+    /couldn't find remote ref/i.test(message) ||
+    /upload-pack: not our ref/i.test(message)
+  );
+}
+
+/**
+ * Clone a repository pinned to a specific commit SHA.
+ *
+ * `git clone --branch` cannot target a bare SHA, and a `--depth 1` clone does
+ * not contain arbitrary commits. Instead, init an empty repo and fetch only the
+ * requested commit, then check it out. This requires the server to allow
+ * fetching reachable commits by SHA (`uploadpack.allowReachableSHA1InWant`),
+ * which GitHub and GitLab.com both enable. If the server rejects it, the caller
+ * falls back to the standard error handling.
+ */
+async function cloneAtSha(
+  url: string,
+  sha: string,
+  tempDir: string,
+  extraEnv?: NodeJS.ProcessEnv
+): Promise<void> {
+  const git = createGitClient(extraEnv);
+  await git.cwd(tempDir);
+  await git.init();
+  await git.addRemote('origin', url);
+  await git.fetch(['--depth', '1', 'origin', sha]);
+  await git.checkout('FETCH_HEAD');
+}
+
 interface GitHubRepoInfo {
   owner: string;
   repo: string;
   slug: string;
   sshUrl: string;
-}
-
-export class GitCloneError extends Error {
-  readonly url: string;
-  readonly isTimeout: boolean;
-  readonly isAuthError: boolean;
-
-  constructor(message: string, url: string, isTimeout = false, isAuthError = false) {
-    super(message);
-    this.name = 'GitCloneError';
-    this.url = url;
-    this.isTimeout = isTimeout;
-    this.isAuthError = isAuthError;
-  }
 }
 
 export function parseGitHubRepoUrl(url: string): GitHubRepoInfo | null {
@@ -109,7 +156,22 @@ function isAuthFailure(message: string): boolean {
   );
 }
 
-function createGitClient(sshCommand?: string) {
+function createGitClient(extraEnv?: NodeJS.ProcessEnv) {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
+    // When git-lfs IS installed, tell it not to download LFS content
+    // during checkout. See #952 for context and empirical impact.
+    GIT_LFS_SKIP_SMUDGE: '1',
+    // isMissingRefError and isAuthFailure match git's English messages. A
+    // translated git (e.g. LANG=de_DE.UTF-8) would skip the commit-SHA and
+    // auth fallbacks, so force untranslated output. LC_ALL=C also overrides
+    // LANGUAGE and LC_MESSAGES. See #2505.
+    LC_ALL: 'C',
+    ...extraEnv,
+  };
+
   const git = simpleGit({
     timeout: { block: CLONE_TIMEOUT_MS },
     // When git-lfs is NOT installed, GIT_LFS_SKIP_SMUDGE has no effect —
@@ -125,11 +187,21 @@ function createGitClient(sshCommand?: string) {
     // (skills are plain text — HTML/MD/JSON — never LFS-tracked).
     //
     // Reported downstream: heygen-com/hyperframes#407.
+    //
+    // Windows checks a path against MAX_PATH (260 chars) unless long paths are
+    // enabled. Git opts in per-invocation with core.longpaths, and the option
+    // has to reach every command that writes the working tree: CLONE checks
+    // out in-process, while the commit-SHA fallback checks out FETCH_HEAD in a
+    // separate invocation. Setting it here covers both because simple-git
+    // prefixes every command with the instance config.
+    //
+    // Reported downstream: vercel-labs/skills#2613.
     config: [
       'filter.lfs.required=false',
       'filter.lfs.smudge=',
       'filter.lfs.clean=',
       'filter.lfs.process=',
+      'core.longpaths=true',
     ],
     // simple-git v3.36+ rejects all `filter.*` configuration by default.
     // These values are hard-coded above and only disable the LFS filter for
@@ -141,38 +213,41 @@ function createGitClient(sshCommand?: string) {
     // allowances apply only to trusted environment variables already controlled
     // by the caller (plus the hard-coded SSH fallback). This client is used only
     // for clone with fixed options; the clone URL and ref cannot configure them.
+    //
+    // simple-git v4 also strips or rejects Git-related variables (GIT_*,
+    // PAGER, SSH_ASKPASS, ...) unless they are listed in allowEnvironment.
+    // Allow every variable we pass so the inherited environment reaches git
+    // unchanged, as it did with v3.
+    allowEnvironment: Object.keys(env),
     unsafe: {
       allowUnsafeAlias: true,
       allowUnsafeAskPass: true,
+      allowUnsafeCommandBinaries: true,
       allowUnsafeConfigEnvCount: true,
       allowUnsafeConfigPaths: true,
       allowUnsafeCredentialHelper: true,
       allowUnsafeDiffExternal: true,
       allowUnsafeDiffTextConv: true,
       allowUnsafeEditor: true,
+      allowUnsafeExec: true,
       allowUnsafeFilter: true,
       allowUnsafeFsMonitor: true,
       allowUnsafeGpgProgram: true,
       allowUnsafeGitProxy: true,
       allowUnsafeHooksPath: true,
+      allowUnsafeInclude: true,
       allowUnsafeMergeDriver: true,
       allowUnsafePack: true,
       allowUnsafePager: true,
       allowUnsafeProtocolOverride: true,
       allowUnsafeSshCommand: true,
+      allowUnsafeSubmodule: true,
       allowUnsafeTemplateDir: true,
+      allowUnsafeUrlRewrite: true,
     },
   });
 
-  git.env({
-    ...process.env,
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
-    // When git-lfs IS installed, tell it not to download LFS content
-    // during checkout. See #952 for context and empirical impact.
-    GIT_LFS_SKIP_SMUDGE: '1',
-    ...(sshCommand ? { GIT_SSH_COMMAND: sshCommand } : {}),
-  });
+  git.env(env);
 
   return git;
 }
@@ -180,6 +255,18 @@ function createGitClient(sshCommand?: string) {
 async function resetTempDir(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true }).catch(() => {});
   await mkdir(dir, { recursive: true });
+}
+
+async function initializeSubmodules(repoDir: string, extraEnv?: NodeJS.ProcessEnv): Promise<void> {
+  try {
+    const git = createGitClient(extraEnv);
+    await git.cwd(repoDir);
+    await git.submoduleUpdate(['--init', '--recursive', '--depth', '1']);
+  } catch {
+    console.warn(
+      'Warning: failed to initialize Git submodules; installed skills may be incomplete.'
+    );
+  }
 }
 
 async function tryGhClone(repo: GitHubRepoInfo, tempDir: string, ref?: string): Promise<boolean> {
@@ -211,42 +298,22 @@ async function tryGhClone(repo: GitHubRepoInfo, tempDir: string, ref?: string): 
   return true;
 }
 
-function buildGitHubAuthError(url: string, repo: GitHubRepoInfo | null, message: string): string {
+function authError(url: string, repo: GitHubRepoInfo | null, message: string, cause: unknown) {
   const host = repo?.sshUrl.match(/^git@([^:]+):/)?.[1] || 'github.com';
   if (repo && isGitHubSsoAuthError(message)) {
-    return (
-      `GitHub blocked HTTPS access to ${url} because the organization enforces SAML SSO.\n` +
-      `  skills tried your existing git credentials and available fallbacks, but none succeeded.\n` +
-      `  - Re-authorize your GitHub credentials/app for that org's SSO policy\n` +
-      `  - Or rerun with SSH: npx skills add ${repo.sshUrl}\n` +
-      `  - Verify access with: gh auth status -h ${host} or ssh -T git@${host}`
-    );
+    return diagnostics.SKILLS_GIT_SAML_SSO_BLOCKED({ url, sshUrl: repo.sshUrl, host, cause });
   }
-
-  if (repo) {
-    return (
-      `Authentication failed for ${url}.\n` +
-      `  - For private repos, ensure you have access\n` +
-      `  - Retry with SSH: npx skills add ${repo.sshUrl}\n` +
-      `  - Check access with: gh auth status -h ${host} or ssh -T git@${host}`
-    );
-  }
-
-  return (
-    `Authentication failed for ${url}.\n` +
-    `  - For private repos, ensure you have access\n` +
-    `  - For SSH: Check your keys with 'ssh -T git@github.com'\n` +
-    `  - For HTTPS: Run 'gh auth login' or configure git credentials`
-  );
+  return diagnostics.SKILLS_GIT_AUTH_FAILED({ url, sshUrl: repo?.sshUrl, host, cause });
 }
 
 export async function cloneRepo(url: string, ref?: string): Promise<string> {
   if (/^ext::/i.test(url)) {
-    throw new GitCloneError('Unsupported Git transport: ext', url);
+    throw diagnostics.SKILLS_UNSUPPORTED_GIT_TRANSPORT({ transport: 'ext' });
   }
 
   const tempDir = await mkdtemp(join(tmpdir(), 'skills-'));
   const cloneOptions = ref ? ['--depth', '1', '--branch', ref] : ['--depth', '1'];
+  const refCanBeSha = !!ref && isCommitSha(ref);
   const repo = parseGitHubRepoUrl(url);
   const displayUrl = url;
 
@@ -254,51 +321,62 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
   // GITLAB_TOKEN (or GL_TOKEN) is set. This avoids interactive credential
   // prompts and supports private repos without SSH key configuration.
   const isGitLab = isSelfHostedGitLab(url);
-  if (isGitLab) {
-    const token = getGitLabToken();
-    if (token) {
-      url = injectGitLabToken(url, token);
-    }
+  const gitLabToken = isGitLab ? getGitLabToken() : undefined;
+  if (gitLabToken) {
+    url = injectGitLabToken(url, gitLabToken);
   }
+  // Never surface an injected token in user-facing error output.
+  const redact = (text: string) =>
+    gitLabToken ? text.split(url).join(displayUrl).split(gitLabToken).join('***') : text;
 
   try {
     await createGitClient().clone(url, tempDir, cloneOptions);
+    await initializeSubmodules(tempDir);
     return tempDir;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // `--branch` cannot target a bare commit SHA. If the ref is a full SHA and
+    // the clone failed because the ref was not a branch or tag, retry by
+    // fetching the commit directly. This runs only after `--branch` fails, so a
+    // real branch or tag (any name) is always resolved first.
+    if (refCanBeSha && isMissingRefError(errorMessage)) {
+      try {
+        await resetTempDir(tempDir);
+        await cloneAtSha(url, ref!, tempDir);
+        await initializeSubmodules(tempDir);
+        return tempDir;
+      } catch {
+        // Fall through to the standard error handling below.
+      }
+    }
+
     const isTimeout = errorMessage.includes('block timeout') || errorMessage.includes('timed out');
     const isAuthError = isAuthFailure(errorMessage);
 
     if (isTimeout) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      const seconds = Math.round(CLONE_TIMEOUT_MS / 1000);
-      throw new GitCloneError(
-        `Clone timed out after ${seconds}s. Common causes:\n` +
-          `  - Large repository: raise the timeout with SKILLS_CLONE_TIMEOUT_MS=600000 (10m)\n` +
-          `  - Slow network: retry, or clone manually and pass the local path to 'skills add'\n` +
-          `  - Private repo without credentials: ensure auth is configured\n` +
-          `      - For SSH: ssh-add -l (to check loaded keys)\n` +
-          `      - For HTTPS: gh auth status (if using GitHub CLI)`,
-        displayUrl,
-        true,
-        false
-      );
+      throw diagnostics.SKILLS_GIT_CLONE_TIMEOUT({
+        seconds: Math.round(CLONE_TIMEOUT_MS / 1000),
+        cause: error,
+      });
     }
 
     if (isAuthError && isGitLab) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      throw new GitCloneError(buildGitLabAuthError(displayUrl), displayUrl, false, true);
+      throw diagnostics.SKILLS_GITLAB_AUTH_FAILED({ message: buildGitLabAuthError(displayUrl) });
     }
 
     if (isGitLab && isGitLabTlsError(errorMessage)) {
       await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      throw new GitCloneError(buildGitLabConnectError(displayUrl), displayUrl, false, false);
+      throw diagnostics.SKILLS_GITLAB_TLS_FAILED({ message: buildGitLabConnectError(displayUrl) });
     }
 
     if (isAuthError && repo && isGitHubHttpsCloneUrl(displayUrl)) {
       try {
         await resetTempDir(tempDir);
         if (await tryGhClone(repo, tempDir, ref)) {
+          await initializeSubmodules(tempDir);
           return tempDir;
         }
       } catch {
@@ -307,11 +385,22 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
 
       try {
         await resetTempDir(tempDir);
-        await createGitClient(process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes').clone(
-          repo.sshUrl,
-          tempDir,
-          cloneOptions
-        );
+        const sshEnv = {
+          GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',
+        };
+        try {
+          await createGitClient(sshEnv).clone(repo.sshUrl, tempDir, cloneOptions);
+          await initializeSubmodules(tempDir, sshEnv);
+        } catch (sshError) {
+          const sshMessage = sshError instanceof Error ? sshError.message : String(sshError);
+          if (refCanBeSha && isMissingRefError(sshMessage)) {
+            await resetTempDir(tempDir);
+            await cloneAtSha(repo.sshUrl, ref!, tempDir, sshEnv);
+            await initializeSubmodules(tempDir, sshEnv);
+          } else {
+            throw sshError;
+          }
+        }
         return tempDir;
       } catch {
         // Fall through to the targeted auth error below.
@@ -321,20 +410,14 @@ export async function cloneRepo(url: string, ref?: string): Promise<string> {
     await rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
     if (isAuthError) {
-      throw new GitCloneError(
-        buildGitHubAuthError(displayUrl, repo, errorMessage),
-        displayUrl,
-        false,
-        true
-      );
+      throw authError(displayUrl, repo, errorMessage, error);
     }
 
-    throw new GitCloneError(
-      `Failed to clone ${displayUrl}: ${errorMessage}`,
-      displayUrl,
-      false,
-      false
-    );
+    throw diagnostics.SKILLS_GIT_CLONE_FAILED({
+      url: displayUrl,
+      detail: redact(errorMessage),
+      cause: error,
+    });
   }
 }
 
@@ -347,8 +430,15 @@ export async function getGitTreeHash(repoDir: string, skillPath: string): Promis
   const segments = normalizedPath.split('/');
   segments.pop();
   const folderPath = segments.join('/');
-  const revision = folderPath ? `HEAD:${folderPath}` : 'HEAD^{tree}';
+  return revParse(repoDir, folderPath ? `HEAD:${folderPath}` : 'HEAD^{tree}');
+}
 
+/** The commit checked out in a cloned repository, or null when it cannot be read. */
+export function getHeadCommit(repoDir: string): Promise<string | null> {
+  return revParse(repoDir, 'HEAD^{commit}');
+}
+
+async function revParse(repoDir: string, revision: string): Promise<string | null> {
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
       execFile(
@@ -378,7 +468,7 @@ export async function cleanupTempDir(dir: string): Promise<void> {
   const normalizedTmpDir = normalize(resolve(tmpdir()));
 
   if (!normalizedDir.startsWith(normalizedTmpDir + sep) && normalizedDir !== normalizedTmpDir) {
-    throw new Error('Attempted to clean up directory outside of temp directory');
+    throw diagnostics.SKILLS_CLEANUP_OUTSIDE_TEMP_DIR();
   }
 
   await rm(dir, { recursive: true, force: true });

@@ -5,7 +5,7 @@ const simpleGitMock = vi.hoisted(() => vi.fn());
 const execFileMock = vi.hoisted(() => vi.fn());
 
 vi.mock('simple-git', () => ({
-  default: simpleGitMock,
+  simpleGit: simpleGitMock,
 }));
 
 vi.mock('child_process', async () => {
@@ -17,11 +17,12 @@ vi.mock('child_process', async () => {
 });
 
 import {
-  GitCloneError,
   cloneRepo,
   getGitTreeHash,
+  isCommitSha,
   isGitHubHttpsCloneUrl,
   isGitHubSsoAuthError,
+  isMissingRefError,
   parseGitHubRepoUrl,
 } from './git.ts';
 
@@ -29,10 +30,32 @@ function createGitClientMock(clone: ReturnType<typeof vi.fn>) {
   const client = {
     clone,
     env: vi.fn(),
+    cwd: vi.fn(),
+    submoduleUpdate: vi.fn(),
   };
   client.env.mockReturnValue(client);
+  client.cwd.mockResolvedValue(client);
+  client.submoduleUpdate.mockResolvedValue(undefined);
   return client;
 }
+
+// A client mock for the commit-SHA fetch path (cloneAtSha):
+// cwd().init().addRemote().fetch().checkout().
+function createShaClientMock(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
+  const env = vi.fn();
+  const client = {
+    cwd: overrides.cwd ?? vi.fn().mockResolvedValue(undefined),
+    init: overrides.init ?? vi.fn().mockResolvedValue(undefined),
+    addRemote: overrides.addRemote ?? vi.fn().mockResolvedValue(undefined),
+    fetch: overrides.fetch ?? vi.fn().mockResolvedValue(undefined),
+    checkout: overrides.checkout ?? vi.fn().mockResolvedValue(undefined),
+    env,
+  };
+  env.mockReturnValue(client);
+  return client;
+}
+
+const FULL_SHA = '6c6076a293e7ffeb108bad2a231cbd855890d3b5';
 
 function mockExecFileSuccess(stdout = '', stderr = '') {
   execFileMock.mockImplementationOnce(
@@ -114,7 +137,8 @@ describe('git clone fallbacks', () => {
     vi.stubEnv('PAGER', 'skills-test-pager');
     const clone = vi.fn().mockResolvedValue(undefined);
     const client = createGitClientMock(clone);
-    simpleGitMock.mockReturnValueOnce(client);
+    const submoduleClient = createGitClientMock(vi.fn());
+    simpleGitMock.mockReturnValueOnce(client).mockReturnValueOnce(submoduleClient);
 
     const tempDir = await cloneRepo('https://github.com/Giphy/giphy-codex-skills.git');
     createdDirs.push(tempDir);
@@ -126,28 +150,41 @@ describe('git clone fallbacks', () => {
           'filter.lfs.smudge=',
           'filter.lfs.clean=',
           'filter.lfs.process=',
+          'core.longpaths=true',
         ],
         unsafe: {
           allowUnsafeAlias: true,
           allowUnsafeAskPass: true,
+          allowUnsafeCommandBinaries: true,
           allowUnsafeConfigEnvCount: true,
           allowUnsafeConfigPaths: true,
           allowUnsafeCredentialHelper: true,
           allowUnsafeDiffExternal: true,
           allowUnsafeDiffTextConv: true,
           allowUnsafeEditor: true,
+          allowUnsafeExec: true,
           allowUnsafeFilter: true,
           allowUnsafeFsMonitor: true,
           allowUnsafeGpgProgram: true,
           allowUnsafeGitProxy: true,
           allowUnsafeHooksPath: true,
+          allowUnsafeInclude: true,
           allowUnsafeMergeDriver: true,
           allowUnsafePack: true,
           allowUnsafePager: true,
           allowUnsafeProtocolOverride: true,
           allowUnsafeSshCommand: true,
+          allowUnsafeSubmodule: true,
           allowUnsafeTemplateDir: true,
+          allowUnsafeUrlRewrite: true,
         },
+        allowEnvironment: expect.arrayContaining([
+          'EDITOR',
+          'GIT_ASKPASS',
+          'GIT_TERMINAL_PROMPT',
+          'GIT_LFS_SKIP_SMUDGE',
+          'PAGER',
+        ]),
       })
     );
     expect(simpleGitMock.mock.calls[0]![0]).not.toHaveProperty('env');
@@ -159,6 +196,30 @@ describe('git clone fallbacks', () => {
         GIT_LFS_SKIP_SMUDGE: '1',
         PAGER: 'skills-test-pager',
       })
+    );
+    expect(submoduleClient.cwd).toHaveBeenCalledWith(tempDir);
+    expect(submoduleClient.submoduleUpdate).toHaveBeenCalledWith([
+      '--init',
+      '--recursive',
+      '--depth',
+      '1',
+    ]);
+  });
+
+  it('warns but completes the clone when submodule initialization fails', async () => {
+    const clone = vi.fn().mockResolvedValue(undefined);
+    const submoduleClient = createGitClientMock(vi.fn());
+    submoduleClient.submoduleUpdate.mockRejectedValue(new Error('submodule access denied'));
+    simpleGitMock
+      .mockReturnValueOnce(createGitClientMock(clone))
+      .mockReturnValueOnce(submoduleClient);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const tempDir = await cloneRepo('https://gitlab.com/acme/skills.git');
+    createdDirs.push(tempDir);
+
+    expect(warning).toHaveBeenCalledWith(
+      'Warning: failed to initialize Git submodules; installed skills may be incomplete.'
     );
   });
 
@@ -172,7 +233,10 @@ describe('git clone fallbacks', () => {
         )
       );
 
-    simpleGitMock.mockReturnValueOnce(createGitClientMock(primaryClone));
+    const submoduleClient = createGitClientMock(vi.fn());
+    simpleGitMock
+      .mockReturnValueOnce(createGitClientMock(primaryClone))
+      .mockReturnValueOnce(submoduleClient);
     mockExecFileSuccess('Git operations protocol: https\n');
     mockExecFileSuccess();
 
@@ -186,6 +250,12 @@ describe('git clone fallbacks', () => {
       expect.any(Object),
       expect.any(Function)
     );
+    expect(submoduleClient.submoduleUpdate).toHaveBeenCalledWith([
+      '--init',
+      '--recursive',
+      '--depth',
+      '1',
+    ]);
     expect(execFileMock).toHaveBeenNthCalledWith(
       2,
       'gh',
@@ -199,7 +269,9 @@ describe('git clone fallbacks', () => {
     vi.stubEnv('GH_HOST', 'github.example.com');
     const primaryClone = vi.fn().mockRejectedValue(new Error('fatal: Authentication failed'));
 
-    simpleGitMock.mockReturnValueOnce(createGitClientMock(primaryClone));
+    simpleGitMock
+      .mockReturnValueOnce(createGitClientMock(primaryClone))
+      .mockReturnValueOnce(createGitClientMock(vi.fn()));
     mockExecFileSuccess('Git operations protocol: https\n');
     mockExecFileSuccess();
 
@@ -227,8 +299,12 @@ describe('git clone fallbacks', () => {
     const sshClone = vi.fn().mockResolvedValue(undefined);
     const primaryClient = createGitClientMock(primaryClone);
     const sshClient = createGitClientMock(sshClone);
+    const submoduleClient = createGitClientMock(vi.fn());
 
-    simpleGitMock.mockReturnValueOnce(primaryClient).mockReturnValueOnce(sshClient);
+    simpleGitMock
+      .mockReturnValueOnce(primaryClient)
+      .mockReturnValueOnce(sshClient)
+      .mockReturnValueOnce(submoduleClient);
     mockExecFileSuccess('Git operations protocol: ssh\n');
     mockExecFileError('gh repo clone failed');
 
@@ -240,6 +316,11 @@ describe('git clone fallbacks', () => {
       '1',
     ]);
     expect(sshClient.env).toHaveBeenCalledWith(
+      expect.objectContaining({
+        GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',
+      })
+    );
+    expect(submoduleClient.env).toHaveBeenCalledWith(
       expect.objectContaining({
         GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',
       })
@@ -266,7 +347,7 @@ describe('git clone fallbacks', () => {
       await cloneRepo('https://github.com/Giphy/giphy-codex-skills.git');
       throw new Error('Expected cloneRepo to throw');
     } catch (error) {
-      expect(error).toBeInstanceOf(GitCloneError);
+      expect(error).toMatchObject({ code: 'SKILLS_GIT_SAML_SSO_BLOCKED' });
       expect((error as Error).message).toMatch(/SAML SSO/);
       expect((error as Error).message).toMatch(/git@github\.com:Giphy\/giphy-codex-skills\.git/);
     }
@@ -281,9 +362,9 @@ describe('git clone fallbacks', () => {
 
     simpleGitMock.mockReturnValueOnce(createGitClientMock(primaryClone));
 
-    await expect(cloneRepo('https://gitlab.com/Giphy/giphy-codex-skills.git')).rejects.toThrow(
-      GitCloneError
-    );
+    await expect(
+      cloneRepo('https://gitlab.com/Giphy/giphy-codex-skills.git')
+    ).rejects.toMatchObject({ code: 'SKILLS_GIT_AUTH_FAILED' });
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
@@ -292,9 +373,9 @@ describe('git clone fallbacks', () => {
 
     simpleGitMock.mockReturnValueOnce(createGitClientMock(primaryClone));
 
-    await expect(cloneRepo('git@github.com:Giphy/giphy-codex-skills.git')).rejects.toThrow(
-      GitCloneError
-    );
+    await expect(cloneRepo('git@github.com:Giphy/giphy-codex-skills.git')).rejects.toMatchObject({
+      code: 'SKILLS_GIT_AUTH_FAILED',
+    });
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
@@ -325,5 +406,192 @@ describe('git clone fallbacks', () => {
 
     expect(simpleGitMock).not.toHaveBeenCalled();
     expect(execFileMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a commit-SHA fetch when --branch reports a missing ref', async () => {
+    const primaryClone = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(`fatal: Remote branch ${FULL_SHA} not found in upstream origin`)
+      );
+    const shaClient = createShaClientMock();
+
+    simpleGitMock
+      .mockReturnValueOnce(createGitClientMock(primaryClone))
+      .mockReturnValueOnce(shaClient);
+
+    const tempDir = await cloneRepo('https://gitlab.com/group/repo.git', FULL_SHA);
+    createdDirs.push(tempDir);
+
+    expect(primaryClone).toHaveBeenCalledWith('https://gitlab.com/group/repo.git', tempDir, [
+      '--depth',
+      '1',
+      '--branch',
+      FULL_SHA,
+    ]);
+    expect(shaClient.fetch).toHaveBeenCalledWith(['--depth', '1', 'origin', FULL_SHA]);
+    expect(shaClient.checkout).toHaveBeenCalledWith('FETCH_HEAD');
+  });
+
+  it('overrides a translated user locale with LC_ALL=C for every git client', async () => {
+    vi.stubEnv('LC_ALL', 'ko_KR.UTF-8');
+    const primaryClient = createGitClientMock(
+      vi
+        .fn()
+        .mockRejectedValue(
+          new Error(`fatal: Remote branch ${FULL_SHA} not found in upstream origin`)
+        )
+    );
+    const shaClient = createShaClientMock();
+
+    simpleGitMock.mockReturnValueOnce(primaryClient).mockReturnValueOnce(shaClient);
+
+    const tempDir = await cloneRepo('https://gitlab.com/group/repo.git', FULL_SHA);
+    createdDirs.push(tempDir);
+
+    expect(primaryClient.env).toHaveBeenCalledWith(expect.objectContaining({ LC_ALL: 'C' }));
+    expect(shaClient.env).toHaveBeenCalledWith(expect.objectContaining({ LC_ALL: 'C' }));
+  });
+
+  it('enables core.longpaths on the commit-SHA fetch and checkout', async () => {
+    // Windows rejects working-tree paths longer than MAX_PATH unless git is
+    // told to opt in. The SHA fallback checks out FETCH_HEAD with a separate
+    // git process, so the option has to arrive through the shared config.
+    const primaryClone = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(`fatal: Remote branch ${FULL_SHA} not found in upstream origin`)
+      );
+    const shaClient = createShaClientMock();
+
+    simpleGitMock
+      .mockReturnValueOnce(createGitClientMock(primaryClone))
+      .mockReturnValueOnce(shaClient);
+
+    const tempDir = await cloneRepo('https://gitlab.com/group/repo.git', FULL_SHA);
+    createdDirs.push(tempDir);
+
+    expect(simpleGitMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        config: expect.arrayContaining(['core.longpaths=true']),
+      })
+    );
+  });
+
+  it('does not attempt the SHA fetch for a non-SHA ref', async () => {
+    const primaryClone = vi
+      .fn()
+      .mockRejectedValue(new Error('fatal: Remote branch deadbeef not found in upstream origin'));
+
+    simpleGitMock.mockReturnValueOnce(createGitClientMock(primaryClone));
+
+    await expect(cloneRepo('https://gitlab.com/group/repo.git', 'deadbeef')).rejects.toMatchObject({
+      code: 'SKILLS_GIT_CLONE_FAILED',
+    });
+    // Only the primary --branch client is constructed; no SHA-fetch client.
+    expect(simpleGitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attempt the SHA fetch when the failure is not a missing ref', async () => {
+    const primaryClone = vi.fn().mockRejectedValue(new Error('fatal: Authentication failed'));
+
+    simpleGitMock.mockReturnValueOnce(createGitClientMock(primaryClone));
+
+    await expect(cloneRepo('https://gitlab.com/group/repo.git', FULL_SHA)).rejects.toMatchObject({
+      code: 'SKILLS_GIT_AUTH_FAILED',
+    });
+    expect(simpleGitMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isCommitSha', () => {
+  it('matches a full 40-character hex SHA', () => {
+    expect(isCommitSha(FULL_SHA)).toBe(true);
+    expect(isCommitSha('abcdef0123456789abcdef0123456789abcdef01')).toBe(true);
+  });
+
+  it('rejects a 40-character string containing non-hex characters', () => {
+    expect(isCommitSha('z'.repeat(40))).toBe(false);
+    expect(isCommitSha('g0000000000000000000000000000000000000000'.slice(0, 40))).toBe(false);
+  });
+
+  it('rejects abbreviated SHAs (not fetchable by the protocol)', () => {
+    expect(isCommitSha('6c6076a')).toBe(false);
+    expect(isCommitSha('6c6076a293')).toBe(false);
+  });
+
+  it('rejects branch and tag names', () => {
+    expect(isCommitSha('main')).toBe(false);
+    expect(isCommitSha('v1.2.3')).toBe(false);
+    expect(isCommitSha('deadbeef')).toBe(false); // hex but only 8 chars
+    expect(isCommitSha('release/2.0')).toBe(false);
+  });
+});
+
+describe('isMissingRefError', () => {
+  it('matches the clone --branch missing-ref message', () => {
+    expect(isMissingRefError(`fatal: Remote branch ${FULL_SHA} not found in upstream origin`)).toBe(
+      true
+    );
+  });
+
+  it('matches the fetch shorthand missing-ref message', () => {
+    expect(isMissingRefError("fatal: couldn't find remote ref deadbeef")).toBe(true);
+  });
+
+  it('matches the server-side fetch-by-SHA rejection', () => {
+    expect(isMissingRefError(`fatal: remote error: upload-pack: not our ref ${FULL_SHA}`)).toBe(
+      true
+    );
+  });
+
+  it('does not match unrelated errors', () => {
+    expect(isMissingRefError('fatal: Authentication failed')).toBe(false);
+    expect(isMissingRefError('fatal: unable to access: timed out')).toBe(false);
+  });
+});
+
+describe('self-hosted GitLab clone errors', () => {
+  const TOKEN = 'glpat-secret-token-value';
+  const HOST = 'https://gitlab.company.com';
+
+  beforeEach(async () => {
+    simpleGitMock.mockReset();
+    vi.stubEnv('GITLAB_TOKEN', TOKEN);
+    const { writeSourcesConfigSync, resetSourcesCache } = await import('./sources-config.ts');
+    writeSourcesConfigSync({ version: 1, sources: [{ type: 'gitlab', host: HOST }] });
+    resetSourcesCache();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    const { writeSourcesConfigSync, resetSourcesCache } = await import('./sources-config.ts');
+    writeSourcesConfigSync({ version: 1, sources: [] });
+    resetSourcesCache();
+  });
+
+  it('clones with the injected token but never shows it in the error', async () => {
+    const clone = vi.fn().mockImplementation(async (url: string) => {
+      throw new Error(`fatal: unable to access '${url}': The requested URL returned error: 500`);
+    });
+    simpleGitMock.mockReturnValue(createGitClientMock(clone));
+
+    const error = await cloneRepo(`${HOST}/group/repo.git`).catch((e: unknown) => e);
+
+    expect(clone.mock.calls[0]![0]).toContain(`oauth2:${TOKEN}@`);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).not.toContain(TOKEN);
+    expect((error as Error).message).toContain(`${HOST}/group/repo.git`);
+  });
+
+  it('reports a GitLab-specific auth error', async () => {
+    const clone = vi.fn().mockRejectedValue(new Error('fatal: Authentication failed'));
+    simpleGitMock.mockReturnValue(createGitClientMock(clone));
+
+    const error = await cloneRepo(`${HOST}/group/repo.git`).catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain('GITLAB_TOKEN');
+    expect((error as Error).message).not.toContain(TOKEN);
   });
 });

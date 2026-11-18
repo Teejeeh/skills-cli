@@ -32,7 +32,7 @@ vi.mock('@clack/prompts', () => {
       step: noop,
       success: noop,
     },
-    spinner: () => ({ start: noop, stop: noop }),
+    spinner: () => ({ start: noop, stop: noop, message: noop }),
   };
 });
 
@@ -48,6 +48,7 @@ vi.mock('../src/git.ts', async (importOriginal) => {
     ...actual,
     cloneRepo: vi.fn(),
     cleanupTempDir: vi.fn().mockResolvedValue(undefined),
+    getHeadCommit: vi.fn().mockResolvedValue(null),
   };
 });
 
