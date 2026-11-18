@@ -1,5 +1,5 @@
 import * as p from '@clack/prompts';
-import pc from 'picocolors';
+import { pc } from './color.ts';
 import { selectAgentsInteractive } from './add.ts';
 import { agents } from './agents.ts';
 import { getLastSelectedAgents } from './skill-lock.ts';
@@ -15,7 +15,8 @@ export async function runConfig(args: string[]): Promise<void> {
   } else {
     p.log.error(`Unknown config subcommand: ${subcommand}`);
     console.log('Available subcommands: agents');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 }
 
@@ -47,7 +48,7 @@ async function configAgents(args: string[]): Promise<void> {
 
   if (isCancelled(selected)) {
     p.cancel('Cancelled');
-    process.exit(0);
+    return;
   }
 
   const names = (selected as AgentType[]).map((a) => agents[a]?.displayName ?? a);
